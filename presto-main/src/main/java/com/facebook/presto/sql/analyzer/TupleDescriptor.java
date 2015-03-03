@@ -14,8 +14,6 @@
 package com.facebook.presto.sql.analyzer;
 
 import com.facebook.presto.sql.tree.QualifiedName;
-import com.facebook.presto.util.IterableTransformer;
-import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -27,14 +25,15 @@ import javax.annotation.concurrent.Immutable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
-import static com.facebook.presto.sql.analyzer.Field.isVisiblePredicate;
-import static com.facebook.presto.sql.analyzer.Field.relationAliasGetter;
-import static com.facebook.presto.sql.analyzer.Optionals.isPresentPredicate;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableSet;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Predicates.not;
 
 @Immutable
 public class TupleDescriptor
@@ -53,7 +52,7 @@ public class TupleDescriptor
     {
         checkNotNull(fields, "fields is null");
         this.allFields = ImmutableList.copyOf(fields);
-        this.visibleFields = ImmutableList.copyOf(Iterables.filter(fields, isVisiblePredicate()));
+        this.visibleFields = ImmutableList.copyOf(Iterables.filter(fields, not(Field::isHidden)));
 
         int index = 0;
         ImmutableMap.Builder<Field, Integer> builder = ImmutableMap.builder();
@@ -119,11 +118,11 @@ public class TupleDescriptor
      */
     public Set<QualifiedName> getRelationAliases()
     {
-        return IterableTransformer.on(allFields)
-                .transform(relationAliasGetter())
-                .select(isPresentPredicate())
-                .transform(Optionals.<QualifiedName>optionalGetter())
-                .set();
+        return allFields.stream()
+                .map(Field::getRelationAlias)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(toImmutableSet());
     }
 
     /**
@@ -131,9 +130,9 @@ public class TupleDescriptor
      */
     public List<Field> resolveFieldsWithPrefix(Optional<QualifiedName> prefix)
     {
-        return IterableTransformer.on(visibleFields)
-                .select(Field.matchesPrefixPredicate(prefix))
-                .list();
+        return visibleFields.stream()
+                .filter(input -> input.matchesPrefix(prefix))
+                .collect(toImmutableList());
     }
 
     /**
@@ -141,21 +140,14 @@ public class TupleDescriptor
      */
     public List<Field> resolveFields(QualifiedName name)
     {
-        return IterableTransformer.on(allFields)
-                .select(Field.canResolvePredicate(name))
-                .list();
+        return allFields.stream()
+                .filter(input -> input.canResolve(name))
+                .collect(toImmutableList());
     }
 
     public Predicate<QualifiedName> canResolvePredicate()
     {
-        return new Predicate<QualifiedName>()
-        {
-            @Override
-            public boolean apply(QualifiedName input)
-            {
-                return !resolveFields(input).isEmpty();
-            }
-        };
+        return input -> !resolveFields(input).isEmpty();
     }
 
     /**

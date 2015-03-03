@@ -17,6 +17,7 @@ import com.facebook.presto.metadata.ColumnHandle;
 import com.facebook.presto.metadata.FunctionInfo;
 import com.facebook.presto.metadata.QualifiedTableName;
 import com.facebook.presto.metadata.TableHandle;
+import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.InPredicate;
@@ -28,9 +29,6 @@ import com.facebook.presto.sql.tree.Query;
 import com.facebook.presto.sql.tree.QuerySpecification;
 import com.facebook.presto.sql.tree.SampledRelation;
 import com.facebook.presto.sql.tree.Table;
-import com.facebook.presto.spi.type.Type;
-import com.google.common.base.Objects;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableSet;
@@ -39,6 +37,8 @@ import com.google.common.collect.SetMultimap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -46,6 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class Analysis
 {
     private Query query;
+    private String updateType;
 
     private final IdentityHashMap<Table, Query> namedQueries = new IdentityHashMap<>();
 
@@ -61,7 +62,7 @@ public class Analysis
     private final IdentityHashMap<Node, List<FieldOrExpression>> outputExpressions = new IdentityHashMap<>();
     private final IdentityHashMap<QuerySpecification, List<FunctionCall>> windowFunctions = new IdentityHashMap<>();
 
-    private final IdentityHashMap<Join, List<EquiJoinClause>> joins = new IdentityHashMap<>();
+    private final IdentityHashMap<Join, Expression> joins = new IdentityHashMap<>();
     private final SetMultimap<Node, InPredicate> inPredicates = HashMultimap.create();
     private final IdentityHashMap<Join, JoinInPredicates> joinInPredicates = new IdentityHashMap<>();
 
@@ -77,10 +78,10 @@ public class Analysis
     private final IdentityHashMap<SampledRelation, Double> sampleRatios = new IdentityHashMap<>();
 
     // for create table
-    private Optional<QualifiedTableName> createTableDestination = Optional.absent();
+    private Optional<QualifiedTableName> createTableDestination = Optional.empty();
 
     // for insert
-    private Optional<TableHandle> insertTarget = Optional.absent();
+    private Optional<TableHandle> insertTarget = Optional.empty();
 
     public Query getQuery()
     {
@@ -90,6 +91,16 @@ public class Analysis
     public void setQuery(Query query)
     {
         this.query = query;
+    }
+
+    public String getUpdateType()
+    {
+        return updateType;
+    }
+
+    public void setUpdateType(String updateType)
+    {
+        this.updateType = updateType;
     }
 
     public void addResolvedNames(Expression expression, Map<QualifiedName, Integer> mappings)
@@ -178,12 +189,12 @@ public class Analysis
         having.put(node, expression);
     }
 
-    public void setEquijoinCriteria(Join node, List<EquiJoinClause> clauses)
+    public void setJoinCriteria(Join node, Expression criteria)
     {
-        joins.put(node, clauses);
+        joins.put(node, criteria);
     }
 
-    public List<EquiJoinClause> getJoinCriteria(Join join)
+    public Expression getJoinCriteria(Join join)
     {
         return joins.get(join);
     }
@@ -377,7 +388,7 @@ public class Analysis
         @Override
         public int hashCode()
         {
-            return Objects.hashCode(leftInPredicates, rightInPredicates);
+            return Objects.hash(leftInPredicates, rightInPredicates);
         }
 
         @Override
@@ -390,8 +401,8 @@ public class Analysis
                 return false;
             }
             final JoinInPredicates other = (JoinInPredicates) obj;
-            return Objects.equal(this.leftInPredicates, other.leftInPredicates) &&
-                    Objects.equal(this.rightInPredicates, other.rightInPredicates);
+            return Objects.equals(this.leftInPredicates, other.leftInPredicates) &&
+                    Objects.equals(this.rightInPredicates, other.rightInPredicates);
         }
     }
 }

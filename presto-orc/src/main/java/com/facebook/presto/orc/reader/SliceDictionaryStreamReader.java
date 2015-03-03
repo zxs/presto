@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.orc.reader;
 
+import com.facebook.presto.orc.OrcCorruptionException;
 import com.facebook.presto.orc.SliceVector;
 import com.facebook.presto.orc.StreamDescriptor;
 import com.facebook.presto.orc.Vector;
@@ -33,7 +34,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.facebook.presto.orc.OrcCorruptionException.verifyFormat;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DATA;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DICTIONARY_DATA;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.IN_DICTIONARY;
@@ -41,6 +41,7 @@ import static com.facebook.presto.orc.metadata.Stream.StreamKind.LENGTH;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.PRESENT;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.ROW_GROUP_DICTIONARY;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.ROW_GROUP_DICTIONARY_LENGTH;
+import static com.facebook.presto.orc.reader.OrcReaderUtils.castOrcVector;
 import static com.facebook.presto.orc.stream.MissingStreamSource.missingStreamSource;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -123,7 +124,9 @@ public class SliceDictionaryStreamReader
                 readOffset = presentStream.countBitsSet(readOffset);
             }
             if (readOffset > 0) {
-                verifyFormat(dataStream != null, "Value is not null but data stream is not present");
+                if (dataStream == null) {
+                    throw new OrcCorruptionException("Value is not null but data stream is not present");
+                }
                 if (inDictionaryStream != null) {
                     inDictionaryStream.skip(readOffset);
                 }
@@ -131,17 +134,21 @@ public class SliceDictionaryStreamReader
             }
         }
 
-        SliceVector sliceVector = (SliceVector) vector;
+        SliceVector sliceVector = castOrcVector(vector, SliceVector.class);
 
         if (presentStream == null) {
-            verifyFormat(dataStream != null, "Value is not null but data stream is not present");
+            if (dataStream == null) {
+                throw new OrcCorruptionException("Value is not null but data stream is not present");
+            }
             Arrays.fill(isNullVector, false);
             dataStream.nextIntVector(nextBatchSize, dataVector);
         }
         else {
             int nullValues = presentStream.getUnsetBits(nextBatchSize, isNullVector);
             if (nullValues != nextBatchSize) {
-                verifyFormat(dataStream != null, "Value is not null but data stream is not present");
+                if (dataStream == null) {
+                    throw new OrcCorruptionException("Value is not null but data stream is not present");
+                }
                 dataStream.nextIntVector(nextBatchSize, dataVector, isNullVector);
             }
         }
@@ -182,7 +189,9 @@ public class SliceDictionaryStreamReader
 
             // read the lengths
             LongStream lengthStream = dictionaryLengthStreamSource.openStream();
-            verifyFormat(lengthStream != null, "Dictionary is not empty but dictionary length stream is not present");
+            if (lengthStream == null) {
+                throw new OrcCorruptionException("Dictionary is not empty but dictionary length stream is not present");
+            }
             lengthStream.nextIntVector(dictionarySize, dictionaryLength);
 
             ByteArrayStream dictionaryDataStream = dictionaryDataStreamSource.openStream();
@@ -219,25 +228,15 @@ public class SliceDictionaryStreamReader
     private static void readDictionary(@Nullable ByteArrayStream dictionaryDataStream, int dictionarySize, int[] dictionaryLength, Slice[] dictionary)
             throws IOException
     {
-        // sum lengths
-        int totalLength = 0;
-        for (int i = 0; i < dictionarySize; i++) {
-            totalLength += dictionaryLength[i];
-        }
-
-        // read dictionary data
-        byte[] dictionaryData = new byte[0];
-        if (totalLength > 0) {
-            verifyFormat(dictionaryDataStream != null, "Dictionary length is not zero but dictionary data stream is not present");
-            dictionaryData = dictionaryDataStream.next(totalLength);
-        }
-
         // build dictionary slices
-        int offset = 0;
         for (int i = 0; i < dictionarySize; i++) {
             int length = dictionaryLength[i];
-            dictionary[i] = Slices.wrappedBuffer(dictionaryData, offset, length);
-            offset += length;
+            if (length == 0) {
+                dictionary[i] = Slices.EMPTY_SLICE;
+            }
+            else {
+                dictionary[i] = Slices.wrappedBuffer(dictionaryDataStream.next(length));
+            }
         }
     }
 

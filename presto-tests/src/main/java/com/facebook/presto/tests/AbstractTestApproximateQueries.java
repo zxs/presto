@@ -15,9 +15,10 @@ package com.facebook.presto.tests;
 
 import com.facebook.presto.Session;
 import com.facebook.presto.testing.QueryRunner;
-import com.google.common.base.Optional;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.Test;
+
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -28,7 +29,7 @@ public abstract class AbstractTestApproximateQueries
 
     protected AbstractTestApproximateQueries(QueryRunner queryRunner)
     {
-        this(queryRunner, Optional.<Session>absent());
+        this(queryRunner, Optional.empty());
     }
 
     protected AbstractTestApproximateQueries(QueryRunner queryRunner, Session sampledSession)
@@ -54,8 +55,8 @@ public abstract class AbstractTestApproximateQueries
             throws Exception
     {
         assertApproximateQuery(
-                "SELECT COUNT(shipdate) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey APPROXIMATE AT 99.999 CONFIDENCE",
-                "SELECT 4 * COUNT(shipdate) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey");
+                "SELECT COUNT(clerk) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey APPROXIMATE AT 99.999 CONFIDENCE",
+                "SELECT 4 * COUNT(clerk) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey");
     }
 
     @Test

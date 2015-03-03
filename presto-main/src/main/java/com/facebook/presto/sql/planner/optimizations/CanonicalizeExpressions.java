@@ -20,7 +20,6 @@ import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.SymbolAllocator;
 import com.facebook.presto.sql.planner.plan.FilterNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
-import com.facebook.presto.sql.planner.plan.PlanNodeRewriter;
 import com.facebook.presto.sql.planner.plan.PlanRewriter;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
@@ -38,12 +37,12 @@ import com.facebook.presto.sql.tree.NotExpression;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.SearchedCaseExpression;
 import com.facebook.presto.sql.tree.WhenClause;
-import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -68,20 +67,20 @@ public class CanonicalizeExpressions
     }
 
     private static class Rewriter
-            extends PlanNodeRewriter<Void>
+            extends PlanRewriter<Void>
     {
         @Override
-        public PlanNode rewriteProject(ProjectNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitProject(ProjectNode node, RewriteContext<Void> context)
         {
-            PlanNode source = planRewriter.rewrite(node.getSource(), context);
-            Map<Symbol, Expression> assignments = ImmutableMap.copyOf(Maps.transformValues(node.getAssignments(), canonicalizeExpressionFunction()));
+            PlanNode source = context.rewrite(node.getSource());
+            Map<Symbol, Expression> assignments = ImmutableMap.copyOf(Maps.transformValues(node.getAssignments(), CanonicalizeExpressions::canonicalizeExpression));
             return new ProjectNode(node.getId(), source, assignments);
         }
 
         @Override
-        public PlanNode rewriteFilter(FilterNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitFilter(FilterNode node, RewriteContext<Void> context)
         {
-            PlanNode source = planRewriter.rewrite(node.getSource(), context);
+            PlanNode source = context.rewrite(node.getSource());
             Expression canonicalized = canonicalizeExpression(node.getPredicate());
             if (canonicalized.equals(BooleanLiteral.TRUE_LITERAL)) {
                 return source;
@@ -90,7 +89,7 @@ public class CanonicalizeExpressions
         }
 
         @Override
-        public PlanNode rewriteTableScan(TableScanNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitTableScan(TableScanNode node, RewriteContext<Void> context)
         {
             Expression originalConstraint = null;
             if (node.getOriginalConstraint() != null) {
@@ -98,19 +97,6 @@ public class CanonicalizeExpressions
             }
             return new TableScanNode(node.getId(), node.getTable(), node.getOutputSymbols(), node.getAssignments(), originalConstraint, node.getGeneratedPartitions());
         }
-
-        private Function<Expression, Expression> canonicalizeExpressionFunction()
-        {
-            return new Function<Expression, Expression>()
-            {
-                @Override
-                public Expression apply(Expression input)
-                {
-                    return canonicalizeExpression(input);
-                }
-            };
-        }
-
     }
 
     private static class CanonicalizeExpressionRewriter
@@ -129,10 +115,8 @@ public class CanonicalizeExpressions
             Expression condition = treeRewriter.rewrite(node.getCondition(), context);
             Expression trueValue = treeRewriter.rewrite(node.getTrueValue(), context);
 
-            Expression falseValue = null;
-            if (node.getFalseValue().isPresent()) {
-                falseValue = treeRewriter.rewrite(node.getFalseValue().get(), context);
-            }
+            Optional<Expression> falseValue = node.getFalseValue()
+                    .map((value) -> treeRewriter.rewrite(value, context));
 
             return new SearchedCaseExpression(ImmutableList.of(new WhenClause(condition, trueValue)), falseValue);
         }
@@ -183,6 +167,9 @@ public class CanonicalizeExpressions
                 case DAY_OF_YEAR:
                 case DOY:
                     return new FunctionCall(new QualifiedName("day_of_year"), ImmutableList.of(value));
+                case YEAR_OF_WEEK:
+                case YOW:
+                    return new FunctionCall(new QualifiedName("year_of_week"), ImmutableList.of(value));
                 case HOUR:
                     return new FunctionCall(new QualifiedName("hour"), ImmutableList.of(value));
                 case MINUTE:

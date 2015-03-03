@@ -43,6 +43,8 @@ public interface ShardManagerDao
             "  shard_id BIGINT PRIMARY KEY AUTO_INCREMENT,\n" +
             "  shard_uuid BINARY(16) NOT NULL,\n" +
             "  create_time DATETIME NOT NULL,\n" +
+            "  row_count BIGINT NOT NULL,\n" +
+            "  data_size BIGINT NOT NULL,\n" +
             "  UNIQUE (shard_uuid)\n" +
             ")")
     void createTableShards();
@@ -74,10 +76,13 @@ public interface ShardManagerDao
     @SqlUpdate("INSERT INTO nodes (node_identifier) VALUES (:nodeIdentifier)")
     void insertNode(@Bind("nodeIdentifier") String nodeIdentifier);
 
-    @SqlUpdate("INSERT INTO shards (shard_uuid, create_time)\n" +
-            "VALUES (:shardUuid, CURRENT_TIMESTAMP)")
+    @SqlUpdate("INSERT INTO shards (shard_uuid, create_time, row_count, data_size)\n" +
+            "VALUES (:shardUuid, CURRENT_TIMESTAMP, :rowCount, :dataSize)")
     @GetGeneratedKeys
-    long insertShard(@Bind("shardUuid") UUID shardUuid);
+    long insertShard(
+            @Bind("shardUuid") UUID shardUuid,
+            @Bind("rowCount") long rowCount,
+            @Bind("dataSize") long dataSize);
 
     @SqlUpdate("INSERT INTO shard_nodes (shard_id, node_id)\n" +
             "VALUES (:shardId, :nodeId)\n")
@@ -99,6 +104,13 @@ public interface ShardManagerDao
             "JOIN shards s ON (ts.shard_id = s.shard_id)\n" +
             "WHERE ts.table_id = :tableId")
     List<UUID> getShards(@Bind("tableId") long tableId);
+
+    @SqlQuery("SELECT s.shard_uuid\n" +
+            "FROM shards s\n" +
+            "JOIN shard_nodes sn ON (s.shard_id = sn.shard_id)\n" +
+            "JOIN nodes n ON (sn.node_id = n.node_id)\n" +
+            "WHERE n.node_identifier = :nodeIdentifier")
+    Set<UUID> getNodeShards(@Bind("nodeIdentifier") String nodeIdentifier);
 
     @SqlQuery("SELECT s.shard_uuid, n.node_identifier\n" +
             "FROM table_shards ts\n" +

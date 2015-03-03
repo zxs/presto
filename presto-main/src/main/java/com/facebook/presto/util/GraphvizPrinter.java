@@ -18,7 +18,6 @@ import com.facebook.presto.sql.planner.SubPlan;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.plan.AggregationNode;
 import com.facebook.presto.sql.planner.plan.DistinctLimitNode;
-import com.facebook.presto.sql.planner.plan.ExchangeNode;
 import com.facebook.presto.sql.planner.plan.FilterNode;
 import com.facebook.presto.sql.planner.plan.IndexJoinNode;
 import com.facebook.presto.sql.planner.plan.IndexSourceNode;
@@ -30,10 +29,10 @@ import com.facebook.presto.sql.planner.plan.PlanFragmentId;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.PlanVisitor;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
+import com.facebook.presto.sql.planner.plan.RemoteSourceNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SampleNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
-import com.facebook.presto.sql.planner.plan.SinkNode;
 import com.facebook.presto.sql.planner.plan.SortNode;
 import com.facebook.presto.sql.planner.plan.TableCommitNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
@@ -48,7 +47,6 @@ import com.facebook.presto.sql.tree.ComparisonExpression;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
@@ -121,14 +119,7 @@ public final class GraphvizPrinter
 
     public static String printLogical(List<PlanFragment> fragments)
     {
-        Map<PlanFragmentId, PlanFragment> fragmentsById = Maps.uniqueIndex(fragments, new Function<PlanFragment, PlanFragmentId>()
-        {
-            @Override
-            public PlanFragmentId apply(PlanFragment input)
-            {
-                return input.getId();
-            }
-        });
+        Map<PlanFragmentId, PlanFragment> fragmentsById = Maps.uniqueIndex(fragments, PlanFragment::getId);
         PlanNodeIdGenerator idGenerator = new PlanNodeIdGenerator();
 
         StringBuilder output = new StringBuilder();
@@ -150,7 +141,7 @@ public final class GraphvizPrinter
     public static String printDistributed(SubPlan plan)
     {
         List<PlanFragment> fragments = plan.getAllFragments();
-        Map<PlanFragmentId, PlanFragment> fragmentsById = Maps.uniqueIndex(fragments, PlanFragment.idGetter());
+        Map<PlanFragmentId, PlanFragment> fragmentsById = Maps.uniqueIndex(fragments, PlanFragment::getId);
         PlanNodeIdGenerator idGenerator = new PlanNodeIdGenerator();
 
         StringBuilder output = new StringBuilder();
@@ -251,13 +242,6 @@ public final class GraphvizPrinter
         }
 
         @Override
-        public Void visitSink(SinkNode node, Void context)
-        {
-            printNode(node, "Sink", NODE_COLORS.get(NodeType.SINK));
-            return node.getSource().accept(this, context);
-        }
-
-        @Override
         public Void visitWindow(WindowNode node, Void context)
         {
             printNode(node, "Window", format("partition by = %s|order by = %s", Joiner.on(", ").join(node.getPartitionBy()), Joiner.on(", ").join(node.getOrderBy())), NODE_COLORS.get(NodeType.WINDOW));
@@ -297,7 +281,7 @@ public final class GraphvizPrinter
         }
 
         @Override
-        public Void visitExchange(ExchangeNode node, Void context)
+        public Void visitRemoteSource(RemoteSourceNode node, Void context)
         {
             printNode(node, "Exchange 1:N", NODE_COLORS.get(NodeType.EXCHANGE));
             return null;
@@ -354,14 +338,7 @@ public final class GraphvizPrinter
         @Override
         public Void visitTopN(final TopNNode node, Void context)
         {
-            Iterable<String> keys = Iterables.transform(node.getOrderBy(), new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + " " + node.getOrderings().get(input);
-                }
-            });
+            Iterable<String> keys = Iterables.transform(node.getOrderBy(), input -> input + " " + node.getOrderings().get(input));
             printNode(node, format("TopN[%s]", node.getCount()), Joiner.on(", ").join(keys), NODE_COLORS.get(NodeType.TOPN));
             return node.getSource().accept(this, context);
         }
@@ -544,7 +521,7 @@ public final class GraphvizPrinter
         }
 
         @Override
-        public Void visitExchange(ExchangeNode node, Void context)
+        public Void visitRemoteSource(RemoteSourceNode node, Void context)
         {
             for (PlanFragmentId planFragmentId : node.getSourceFragmentIds()) {
                 PlanFragment target = fragmentsById.get(planFragmentId);

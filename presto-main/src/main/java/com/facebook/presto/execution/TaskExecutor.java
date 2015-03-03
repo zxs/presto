@@ -13,12 +13,10 @@
  */
 package com.facebook.presto.execution;
 
+import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.util.CpuTimer;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Ticker;
-import com.google.common.collect.Sets;
-import com.google.common.primitives.Ints;
-import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import io.airlift.concurrent.SetThreadName;
@@ -44,7 +42,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -59,6 +56,7 @@ import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Sets.newConcurrentHashSet;
 import static io.airlift.concurrent.Threads.threadsNamed;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -81,7 +79,7 @@ public class TaskExecutor
     private final ThreadPoolExecutorMBean executorMBean;
 
     private final int runnerThreads;
-    private final int minimumNumberOfTasks;
+    private final int minimumNumberOfDrivers;
 
     private final Ticker ticker;
 
@@ -90,8 +88,8 @@ public class TaskExecutor
 
     private final Set<PrioritizedSplitRunner> allSplits = new HashSet<>();
     private final PriorityBlockingQueue<PrioritizedSplitRunner> pendingSplits;
-    private final Set<PrioritizedSplitRunner> runningSplits = Sets.newSetFromMap(new ConcurrentHashMap<PrioritizedSplitRunner, Boolean>());
-    private final Set<PrioritizedSplitRunner> blockedSplits = Sets.newSetFromMap(new ConcurrentHashMap<PrioritizedSplitRunner, Boolean>());
+    private final Set<PrioritizedSplitRunner> runningSplits = newConcurrentHashSet();
+    private final Set<PrioritizedSplitRunner> blockedSplits = newConcurrentHashSet();
 
     private final AtomicLongArray completedTasksPerLevel = new AtomicLongArray(5);
 
@@ -103,28 +101,27 @@ public class TaskExecutor
     @Inject
     public TaskExecutor(TaskManagerConfig config)
     {
-        this(checkNotNull(config, "config is null").getMaxShardProcessorThreads());
+        this(checkNotNull(config, "config is null").getMaxShardProcessorThreads(), config.getMinDrivers());
     }
 
-    public TaskExecutor(int runnerThreads)
+    public TaskExecutor(int runnerThreads, int minDrivers)
     {
-        this(runnerThreads, Ticker.systemTicker());
+        this(runnerThreads, minDrivers, Ticker.systemTicker());
     }
 
     @VisibleForTesting
-    public TaskExecutor(int runnerThreads, Ticker ticker)
+    public TaskExecutor(int runnerThreads, int minDrivers, Ticker ticker)
     {
         checkArgument(runnerThreads > 0, "runnerThreads must be at least 1");
 
         // we manages thread pool size directly, so create an unlimited pool
-        this.executor = newCachedThreadPool(threadsNamed("task-processor-%d"));
+        this.executor = newCachedThreadPool(threadsNamed("task-processor-%s"));
         this.executorMBean = new ThreadPoolExecutorMBean((ThreadPoolExecutor) executor);
         this.runnerThreads = runnerThreads;
 
         this.ticker = checkNotNull(ticker, "ticker is null");
 
-        // we assume we need at least two tasks per runner thread to keep the system busy
-        this.minimumNumberOfTasks = 2 * this.runnerThreads;
+        this.minimumNumberOfDrivers = minDrivers;
         this.pendingSplits = new PriorityBlockingQueue<>(Runtime.getRuntime().availableProcessors() * 10);
         this.tasks = new LinkedList<>();
     }
@@ -194,7 +191,7 @@ public class TaskExecutor
                 // Note: we do not record queued time for forced splits
                 startSplit(prioritizedSplitRunner);
                 // add the runner to the handle so it can be destroyed if the task is canceled
-                taskHandle.recordRunningSplit(prioritizedSplitRunner);
+                taskHandle.recordForcedRunningSplit(prioritizedSplitRunner);
             }
             else {
                 // add this to the work queue for the task
@@ -246,7 +243,7 @@ public class TaskExecutor
     private synchronized void addNewEntrants()
     {
         int running = allSplits.size();
-        for (int i = 0; i < minimumNumberOfTasks - running; i++) {
+        for (int i = 0; i < minimumNumberOfDrivers - running; i++) {
             PrioritizedSplitRunner split = pollNextSplitWorker();
             if (split == null) {
                 break;
@@ -290,6 +287,7 @@ public class TaskExecutor
         private final TaskId taskId;
         private final Queue<PrioritizedSplitRunner> queuedSplits = new ArrayDeque<>(10);
         private final List<PrioritizedSplitRunner> runningSplits = new ArrayList<>(10);
+        private final List<PrioritizedSplitRunner> forcedRunningSplits = new ArrayList<>(10);
         private final AtomicLong taskThreadUsageNanos = new AtomicLong();
 
         private final AtomicInteger nextSplitId = new AtomicInteger();
@@ -311,6 +309,11 @@ public class TaskExecutor
 
         private void destroy()
         {
+            for (PrioritizedSplitRunner runningSplit : forcedRunningSplits) {
+                runningSplit.destroy();
+            }
+            forcedRunningSplits.clear();
+
             for (PrioritizedSplitRunner runningSplit : runningSplits) {
                 runningSplit.destroy();
             }
@@ -327,12 +330,13 @@ public class TaskExecutor
             queuedSplits.add(split);
         }
 
-        private void recordRunningSplit(PrioritizedSplitRunner split)
+        private void recordForcedRunningSplit(PrioritizedSplitRunner split)
         {
-            runningSplits.add(split);
+            forcedRunningSplits.add(split);
         }
 
-        private int getRunningSplits()
+        @VisibleForTesting
+        int getRunningSplits()
         {
             return runningSplits.size();
         }
@@ -353,6 +357,7 @@ public class TaskExecutor
 
         private void splitComplete(PrioritizedSplitRunner split)
         {
+            forcedRunningSplits.remove(split);
             runningSplits.remove(split);
         }
 
@@ -480,7 +485,7 @@ public class TaskExecutor
         {
             int level = priorityLevel.get();
 
-            int result = Ints.compare(level, o.priorityLevel.get());
+            int result = Integer.compare(level, o.priorityLevel.get());
             if (result != 0) {
                 return result;
             }
@@ -495,7 +500,7 @@ public class TaskExecutor
                 return result;
             }
 
-            return Longs.compare(workerId, o.workerId);
+            return Long.compare(workerId, o.workerId);
         }
 
         public int getSplitId()
@@ -606,7 +611,13 @@ public class TaskExecutor
                         }
                     }
                     catch (Throwable t) {
-                        log.error(t, "Error processing %s", split.getInfo());
+                        if (t instanceof PrestoException) {
+                            PrestoException e = (PrestoException) t;
+                            log.error("Error processing %s: %s: %s", split.getInfo(), e.getErrorCode().getName(), e.getMessage());
+                        }
+                        else {
+                            log.error(t, "Error processing %s", split.getInfo());
+                        }
                         splitFinished(split);
                     }
                 }
@@ -637,9 +648,9 @@ public class TaskExecutor
     }
 
     @Managed
-    public int getMinimumNumberOfTasks()
+    public int getMinimumNumberOfDrivers()
     {
-        return minimumNumberOfTasks;
+        return minimumNumberOfDrivers;
     }
 
     @Managed

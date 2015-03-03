@@ -42,8 +42,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
         @JsonSubTypes.Type(value = TopNNode.class, name = "topn"),
         @JsonSubTypes.Type(value = SampleNode.class, name = "sample"),
         @JsonSubTypes.Type(value = SortNode.class, name = "sort"),
-        @JsonSubTypes.Type(value = ExchangeNode.class, name = "exchange"),
-        @JsonSubTypes.Type(value = SinkNode.class, name = "sink"),
+        @JsonSubTypes.Type(value = RemoteSourceNode.class, name = "remoteSource"),
         @JsonSubTypes.Type(value = JoinNode.class, name = "join"),
         @JsonSubTypes.Type(value = SemiJoinNode.class, name = "semijoin"),
         @JsonSubTypes.Type(value = IndexJoinNode.class, name = "indexjoin"),
@@ -51,6 +50,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
         @JsonSubTypes.Type(value = TableWriterNode.class, name = "tablewriter"),
         @JsonSubTypes.Type(value = TableCommitNode.class, name = "tablecommit"),
         @JsonSubTypes.Type(value = UnnestNode.class, name = "unnest"),
+        @JsonSubTypes.Type(value = ExchangeNode.class, name = "exchange"),
+        @JsonSubTypes.Type(value = UnionNode.class, name = "union"),
 })
 public abstract class PlanNode
 {

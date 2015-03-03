@@ -16,16 +16,12 @@ package com.facebook.presto.execution;
 import com.facebook.presto.Session;
 import com.facebook.presto.event.query.QueryMonitor;
 import com.facebook.presto.execution.QueryExecution.QueryExecutionFactory;
-import com.facebook.presto.execution.StateMachine.StateChangeListener;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.sql.parser.ParsingException;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.tree.Statement;
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.SettableFuture;
 import io.airlift.concurrent.AsyncSemaphore;
 import io.airlift.concurrent.SetThreadName;
@@ -37,7 +33,6 @@ import org.weakref.jmx.Flatten;
 import org.weakref.jmx.Managed;
 import org.weakref.jmx.Nested;
 
-import javax.annotation.Nullable;
 import javax.annotation.PreDestroy;
 import javax.annotation.concurrent.ThreadSafe;
 import javax.inject.Inject;
@@ -46,6 +41,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -56,13 +52,18 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static com.facebook.presto.SystemSessionProperties.isBigQueryEnabled;
 import static com.facebook.presto.spi.StandardErrorCode.QUERY_QUEUE_FULL;
+import static com.facebook.presto.spi.StandardErrorCode.USER_CANCELED;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Iterables.filter;
-import static com.google.common.collect.Iterables.transform;
+import static com.google.common.base.Preconditions.checkState;
 import static io.airlift.concurrent.Threads.threadsNamed;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 
@@ -110,7 +111,7 @@ public class SqlQueryManager
 
         this.executionFactories = checkNotNull(executionFactories, "executionFactories is null");
 
-        this.queryExecutor = newCachedThreadPool(threadsNamed("query-scheduler-%d"));
+        this.queryExecutor = newCachedThreadPool(threadsNamed("query-scheduler-%s"));
         this.queryExecutorMBean = new ThreadPoolExecutorMBean((ThreadPoolExecutor) queryExecutor);
 
         checkNotNull(config, "config is null");
@@ -124,9 +125,9 @@ public class SqlQueryManager
         this.maxQueryHistory = config.getMaxQueryHistory();
         this.clientTimeout = config.getClientTimeout();
 
-        queryManagementExecutor = Executors.newScheduledThreadPool(config.getQueryManagerExecutorPoolSize(), threadsNamed("query-management-%d"));
+        queryManagementExecutor = Executors.newScheduledThreadPool(config.getQueryManagerExecutorPoolSize(), threadsNamed("query-management-%s"));
         queryManagementExecutorMBean = new ThreadPoolExecutorMBean((ThreadPoolExecutor) queryManagementExecutor);
-        queryManagementExecutor.scheduleAtFixedRate(new Runnable()
+        queryManagementExecutor.scheduleWithFixedDelay(new Runnable()
         {
             @Override
             public void run()
@@ -156,29 +157,43 @@ public class SqlQueryManager
     }
 
     @Override
+    public List<QueryId> getAllQueryIds()
+    {
+        return queries.values().stream()
+                .map(queryExecution -> {
+                    try {
+                        return queryExecution.getQueryId();
+                    }
+                    catch (RuntimeException ignored) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(toImmutableList());
+    }
+
+    @Override
     public List<QueryInfo> getAllQueryInfo()
     {
-        return ImmutableList.copyOf(filter(transform(queries.values(), new Function<QueryExecution, QueryInfo>()
-        {
-            @Override
-            public QueryInfo apply(QueryExecution queryExecution)
-            {
-                try {
-                    return queryExecution.getQueryInfo();
-                }
-                catch (RuntimeException ignored) {
-                    return null;
-                }
-            }
-        }), Predicates.notNull()));
+        return queries.values().stream()
+                .map(queryExecution -> {
+                    try {
+                        return queryExecution.getQueryInfo();
+                    }
+                    catch (RuntimeException ignored) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(toImmutableList());
     }
 
     @Override
     public Duration waitForStateChange(QueryId queryId, QueryState currentState, Duration maxWait)
             throws InterruptedException
     {
-        Preconditions.checkNotNull(queryId, "queryId is null");
-        Preconditions.checkNotNull(maxWait, "maxWait is null");
+        checkNotNull(queryId, "queryId is null");
+        checkNotNull(maxWait, "maxWait is null");
 
         QueryExecution query = queries.get(queryId);
         if (query == null) {
@@ -207,7 +222,7 @@ public class SqlQueryManager
     public QueryInfo createQuery(Session session, String query)
     {
         checkNotNull(query, "query is null");
-        Preconditions.checkArgument(!query.isEmpty(), "query must not be empty string");
+        checkArgument(!query.isEmpty(), "query must not be empty string");
 
         QueryId queryId = queryIdGenerator.createNextQueryId();
 
@@ -216,26 +231,32 @@ public class SqlQueryManager
             statement = sqlParser.createStatement(query);
         }
         catch (ParsingException e) {
-            return createFailedQuery(session, query, queryId, e);
+            // This is intentionally not a method, since after the state change listener is registered
+            // it's not safe to do any of this, and we had bugs before where people reused this code in a method
+            URI self = locationFactory.createQueryLocation(queryId);
+            QueryExecution execution = new FailedQueryExecution(queryId, query, session, self, queryExecutor, e);
+
+            queries.put(queryId, execution);
+            queryMonitor.createdEvent(execution.getQueryInfo());
+            queryMonitor.completionEvent(execution.getQueryInfo());
+            stats.queryFinished(execution.getQueryInfo());
+            expirationQueue.add(execution);
+
+            return execution.getQueryInfo();
         }
 
         QueryExecutionFactory<?> queryExecutionFactory = executionFactories.get(statement.getClass());
-        Preconditions.checkState(queryExecutionFactory != null, "Unsupported statement type %s", statement.getClass().getName());
-        final QueryExecution queryExecution = queryExecutionFactory.createQueryExecution(queryId, query, session, statement);
+        checkState(queryExecutionFactory != null, "Unsupported statement type %s", statement.getClass().getName());
+        QueryExecution queryExecution = queryExecutionFactory.createQueryExecution(queryId, query, session, statement);
         queryMonitor.createdEvent(queryExecution.getQueryInfo());
 
-        queryExecution.addStateChangeListener(new StateChangeListener<QueryState>()
-        {
-            @Override
-            public void stateChanged(QueryState newValue)
-            {
-                if (newValue.isDone()) {
-                    QueryInfo info = queryExecution.getQueryInfo();
+        queryExecution.addStateChangeListener(newValue -> {
+            if (newValue.isDone()) {
+                QueryInfo info = queryExecution.getQueryInfo();
 
-                    stats.queryFinished(info);
-                    queryMonitor.completionEvent(info);
-                    expirationQueue.add(queryExecution);
-                }
+                stats.queryFinished(info);
+                queryMonitor.completionEvent(info);
+                expirationQueue.add(queryExecution);
             }
         });
 
@@ -243,7 +264,7 @@ public class SqlQueryManager
 
         // start the query in the background
         if (!queryStarter.submit(queryExecution)) {
-            return createFailedQuery(session, query, queryId, new PrestoException(QUERY_QUEUE_FULL, "Too many queued queries!"));
+            queryExecution.fail(new PrestoException(QUERY_QUEUE_FULL, "Too many queued queries!"));
         }
 
         return queryExecution.getQueryInfo();
@@ -258,14 +279,14 @@ public class SqlQueryManager
 
         QueryExecution query = queries.get(queryId);
         if (query != null) {
-            query.cancel();
+            query.fail(new PrestoException(USER_CANCELED, "Query was canceled"));
         }
     }
 
     @Override
     public void cancelStage(StageId stageId)
     {
-        Preconditions.checkNotNull(stageId, "stageId is null");
+        checkNotNull(stageId, "stageId is null");
 
         log.debug("Cancel stage %s", stageId);
 
@@ -308,36 +329,29 @@ public class SqlQueryManager
         return queryManagementExecutorMBean;
     }
 
-    public void removeQuery(QueryId queryId)
-    {
-        Preconditions.checkNotNull(queryId, "queryId is null");
-
-        log.debug("Remove query %s", queryId);
-
-        QueryExecution query = queries.remove(queryId);
-        if (query != null) {
-            query.cancel();
-        }
-    }
-
     /**
      * Remove completed queries after a waiting period
      */
     public void removeExpiredQueries()
     {
-        while (expirationQueue.size() > maxQueryHistory) {
-            QueryExecution query = expirationQueue.remove();
-            removeQuery(query.getQueryInfo().getQueryId());
-        }
+        DateTime timeHorizon = DateTime.now().minus(maxQueryAge.toMillis());
 
-        DateTime oldestAllowedQuery = DateTime.now().minus(maxQueryAge.toMillis());
-        while (expirationQueue.size() > 0) {
-            QueryExecution query = expirationQueue.peek();
-            if (query.getQueryInfo().getQueryStats().getEndTime().isAfter(oldestAllowedQuery)) {
+        // we're willing to keep queries beyond timeHorizon as long as we have fewer than maxQueryHistory
+        while (expirationQueue.size() > maxQueryHistory) {
+            QueryInfo queryInfo = expirationQueue.peek().getQueryInfo();
+
+            // expirationQueue is FIFO based on query end time. Stop when we see the
+            // first query that's too young to expire
+            if (queryInfo.getQueryStats().getEndTime().isAfter(timeHorizon)) {
                 return;
             }
 
-            removeQuery(query.getQueryInfo().getQueryId());
+            // only expire them if they are older than maxQueryAge. We need to keep them
+            // around for a while in case clients come back asking for status
+            QueryId queryId = queryInfo.getQueryId();
+
+            log.debug("Remove query %s", queryId);
+            queries.remove(queryId);
             expirationQueue.remove();
         }
     }
@@ -365,134 +379,145 @@ public class SqlQueryManager
         return lastHeartbeat != null && lastHeartbeat.isBefore(oldestAllowedHeartbeat);
     }
 
-    private QueryInfo createFailedQuery(Session session, String query, QueryId queryId, Throwable cause)
+    /**
+     * Set up a callback to fire when a query is completed. The callback will be called at most once.
+     */
+    private static void addCompletionCallback(QueryExecution queryExecution, Runnable callback)
     {
-        URI self = locationFactory.createQueryLocation(queryId);
-        QueryExecution execution = new FailedQueryExecution(queryId, query, session, self, queryExecutor, cause);
-
-        queries.put(queryId, execution);
-        stats.queryStarted();
-        queryMonitor.createdEvent(execution.getQueryInfo());
-        queryMonitor.completionEvent(execution.getQueryInfo());
-        stats.queryFinished(execution.getQueryInfo());
-        expirationQueue.add(execution);
-
-        return execution.getQueryInfo();
-    }
-
-    private static Function<QueryExecution, DateTime> endTimeGetter()
-    {
-        return new Function<QueryExecution, DateTime>()
-        {
-            @Nullable
-            @Override
-            public DateTime apply(QueryExecution input)
-            {
-                return input.getQueryInfo().getQueryStats().getEndTime();
+        AtomicBoolean taskExecuted = new AtomicBoolean();
+        queryExecution.addStateChangeListener(newValue -> {
+            if (newValue.isDone() && taskExecuted.compareAndSet(false, true)) {
+                callback.run();
             }
-        };
+        });
+        // Need to do this check in case the state changed before we added the previous state change listener
+        if (queryExecution.getQueryInfo().getState().isDone() && taskExecuted.compareAndSet(false, true)) {
+            callback.run();
+        }
     }
 
+    @ThreadSafe
     private static class QueryStarter
     {
-        private final int maxQueuedQueries;
-        private final AtomicInteger queryQueueSize = new AtomicInteger();
-        private final AsyncSemaphore<QueryExecution> queryAsyncSemaphore;
-
-        private final int maxQueuedBigQueries;
-        private final AtomicInteger bigQueryQueueSize = new AtomicInteger();
-        private final AsyncSemaphore<QueryExecution> bigQueryAsyncSemaphore;
+        private final QueryQueue queryQueue;
+        private final QueryQueue bigQueryQueue;
 
         public QueryStarter(Executor queryExecutor, SqlQueryManagerStats stats, QueryManagerConfig config)
         {
             checkNotNull(queryExecutor, "queryExecutor is null");
             checkNotNull(stats, "stats is null");
+            checkNotNull(config, "config is null");
 
-            this.maxQueuedQueries = config.getMaxQueuedQueries();
-            this.queryAsyncSemaphore = new AsyncSemaphore<>(config.getMaxConcurrentQueries(), queryExecutor, new QuerySubmitter(queryExecutor, stats, queryQueueSize));
-            this.maxQueuedBigQueries = config.getMaxQueuedBigQueries();
-            this.bigQueryAsyncSemaphore = new AsyncSemaphore<>(config.getMaxConcurrentBigQueries(), queryExecutor, new QuerySubmitter(queryExecutor, stats, bigQueryQueueSize));
+            this.queryQueue = new QueryQueue(queryExecutor, stats, config.getMaxQueuedQueries(), config.getMaxConcurrentQueries());
+            this.bigQueryQueue = new QueryQueue(queryExecutor, stats, config.getMaxQueuedBigQueries(), config.getMaxConcurrentBigQueries());
         }
 
         public boolean submit(QueryExecution queryExecution)
         {
-            AtomicInteger queueSize;
-            int maxQueueSize;
-            AsyncSemaphore<QueryExecution> asyncSemaphore;
             if (isBigQueryEnabled(queryExecution.getQueryInfo().getSession(), false)) {
-                queueSize = bigQueryQueueSize;
-                maxQueueSize = maxQueuedBigQueries;
-                asyncSemaphore = bigQueryAsyncSemaphore;
+                return bigQueryQueue.enqueue(queryExecution);
             }
             else {
-                queueSize = queryQueueSize;
-                maxQueueSize = maxQueuedQueries;
-                asyncSemaphore = queryAsyncSemaphore;
+                return queryQueue.enqueue(queryExecution);
             }
-            if (queueSize.incrementAndGet() > maxQueueSize) {
-                queueSize.decrementAndGet();
-                return false;
-            }
-            asyncSemaphore.submit(queryExecution);
-            return true;
         }
 
         public int getQueryQueueSize()
         {
-            return queryQueueSize.get();
+            return queryQueue.getQueueSize();
         }
 
         public int getBigQueryQueueSize()
         {
-            return bigQueryQueueSize.get();
+            return bigQueryQueue.getQueueSize();
         }
 
-        private static class QuerySubmitter
-                implements Function<QueryExecution, ListenableFuture<?>>
+        private static class QueryQueue
         {
-            private final Executor queryExecutor;
-            private final SqlQueryManagerStats stats;
-            private final AtomicInteger queueSize;
+            private final int maxQueuedQueries;
+            private final AtomicInteger queryQueueSize = new AtomicInteger();
+            private final AsyncSemaphore<QueueEntry> asyncSemaphore;
 
-            public QuerySubmitter(Executor queryExecutor, SqlQueryManagerStats stats, AtomicInteger queueSize)
+            private QueryQueue(Executor queryExecutor, SqlQueryManagerStats stats, int maxQueuedQueries, int maxConcurrentQueries)
             {
-                this.queryExecutor = checkNotNull(queryExecutor, "queryExecutor is null");
-                this.stats = checkNotNull(stats, "stats is null");
-                this.queueSize = checkNotNull(queueSize, "queueSize is null");
+                checkNotNull(queryExecutor, "queryExecutor is null");
+                checkNotNull(stats, "stats is null");
+                checkArgument(maxQueuedQueries > 0, "maxQueuedQueries must be greater than zero");
+                checkArgument(maxConcurrentQueries > 0, "maxConcurrentQueries must be greater than zero");
+
+                this.maxQueuedQueries = maxQueuedQueries;
+                this.asyncSemaphore = new AsyncSemaphore<>(maxConcurrentQueries,
+                        queryExecutor,
+                        queueEntry -> {
+                            QueryExecution queryExecution = queueEntry.dequeue();
+                            if (queryExecution == null) {
+                                // Entry was dequeued earlier and so this query is already done
+                                return Futures.immediateFuture(null);
+                            }
+                            else {
+                                SettableFuture<?> settableFuture = SettableFuture.create();
+                                addCompletionCallback(queryExecution, () -> settableFuture.set(null));
+                                if (!settableFuture.isDone()) { // Only execute if the query is not already completed (e.g. cancelled)
+                                    queryExecutor.execute(() -> {
+                                        try (SetThreadName setThreadName = new SetThreadName("Query-%s", queryExecution.getQueryInfo().getQueryId())) {
+                                            stats.queryStarted();
+                                            settableFuture.addListener(stats::queryStopped, MoreExecutors.directExecutor());
+                                            queryExecution.start();
+                                        }
+                                    });
+                                }
+                                return settableFuture;
+                            }
+                        });
             }
 
-            @Override
-            public ListenableFuture<?> apply(final QueryExecution queryExecution)
+            public int getQueueSize()
             {
-                queueSize.decrementAndGet();
-                final SettableFuture<?> settableFuture = SettableFuture.create();
-                queryExecution.addStateChangeListener(new StateChangeListener<QueryState>()
+                return queryQueueSize.get();
+            }
+
+            public boolean enqueue(QueryExecution queryExecution)
+            {
+                if (queryQueueSize.incrementAndGet() > maxQueuedQueries) {
+                    queryQueueSize.decrementAndGet();
+                    return false;
+                }
+
+                QueueEntry queueEntry = new QueueEntry(queryExecution, aVoid -> queryQueueSize.decrementAndGet());
+                // Add a callback to dequeue the entry if it is ever completed.
+                // This enables us to remove the entry sooner if is cancelled before starting,
+                // and has no effect if called after starting.
+                addCompletionCallback(queryExecution, queueEntry::dequeue);
+                asyncSemaphore.submit(queueEntry);
+                return true;
+            }
+
+            private static class QueueEntry
+            {
+                private final AtomicBoolean dequeued = new AtomicBoolean();
+                private final AtomicReference<QueryExecution> queryExecution;
+                private final Consumer<Void> onDequeue;
+
+                private QueueEntry(QueryExecution queryExecution, Consumer<Void> onDequeue)
                 {
-                    @Override
-                    public void stateChanged(QueryState newValue)
-                    {
-                        if (newValue.isDone()) {
-                            settableFuture.set(null);
-                        }
+                    checkNotNull(queryExecution, "queryExecution is null");
+                    checkNotNull(onDequeue, "onDequeue is null");
+
+                    this.queryExecution = new AtomicReference<>(queryExecution);
+                    this.onDequeue = onDequeue;
+                }
+
+                /**
+                 * Can be called multiple times on the same QueueEntry, but the onDequeue Consumer will only be called once
+                 * and only one caller will get the QueryExecution.
+                 */
+                public QueryExecution dequeue()
+                {
+                    if (dequeued.compareAndSet(false, true)) {
+                        onDequeue.accept(null);
                     }
-                });
-                if (queryExecution.getQueryInfo().getState().isDone()) {
-                    settableFuture.set(null);
+                    return queryExecution.getAndSet(null);
                 }
-                else {
-                    queryExecutor.execute(new Runnable()
-                    {
-                        @Override
-                        public void run()
-                        {
-                            try (SetThreadName setThreadName = new SetThreadName("Query-%s", queryExecution.getQueryInfo().getQueryId())) {
-                                stats.queryStarted();
-                                queryExecution.start();
-                            }
-                        }
-                    });
-                }
-                return settableFuture;
             }
         }
     }

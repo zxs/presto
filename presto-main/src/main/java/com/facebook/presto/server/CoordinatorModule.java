@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.server;
 
-import com.facebook.presto.execution.RenameTableTask;
 import com.facebook.presto.execution.CreateViewTask;
 import com.facebook.presto.execution.DataDefinitionTask;
 import com.facebook.presto.execution.DropTableTask;
@@ -27,6 +26,9 @@ import com.facebook.presto.execution.QueryExecutionMBean;
 import com.facebook.presto.execution.QueryIdGenerator;
 import com.facebook.presto.execution.QueryManager;
 import com.facebook.presto.execution.QueryManagerConfig;
+import com.facebook.presto.execution.RenameTableTask;
+import com.facebook.presto.execution.ResetSessionTask;
+import com.facebook.presto.execution.SetSessionTask;
 import com.facebook.presto.execution.SqlQueryManager;
 import com.facebook.presto.metadata.DiscoveryNodeManager;
 import com.facebook.presto.metadata.InternalNodeManager;
@@ -34,22 +36,25 @@ import com.facebook.presto.metadata.ViewDefinition;
 import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.split.SplitManager;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
-import com.facebook.presto.sql.tree.RenameTable;
 import com.facebook.presto.sql.tree.CreateTable;
 import com.facebook.presto.sql.tree.CreateView;
-import com.facebook.presto.sql.tree.Insert;
 import com.facebook.presto.sql.tree.DropTable;
 import com.facebook.presto.sql.tree.DropView;
 import com.facebook.presto.sql.tree.Explain;
+import com.facebook.presto.sql.tree.Insert;
 import com.facebook.presto.sql.tree.Query;
+import com.facebook.presto.sql.tree.RenameTable;
+import com.facebook.presto.sql.tree.ResetSession;
+import com.facebook.presto.sql.tree.SetSession;
 import com.facebook.presto.sql.tree.ShowCatalogs;
 import com.facebook.presto.sql.tree.ShowColumns;
 import com.facebook.presto.sql.tree.ShowFunctions;
 import com.facebook.presto.sql.tree.ShowPartitions;
 import com.facebook.presto.sql.tree.ShowSchemas;
+import com.facebook.presto.sql.tree.ShowSession;
 import com.facebook.presto.sql.tree.ShowTables;
 import com.facebook.presto.sql.tree.Statement;
-import com.facebook.presto.sql.tree.UseCollection;
+import com.facebook.presto.sql.tree.Use;
 import com.google.inject.Binder;
 import com.google.inject.Key;
 import com.google.inject.Module;
@@ -109,7 +114,7 @@ public class CoordinatorModule
 
         // query execution
         binder.bind(ExecutorService.class).annotatedWith(ForQueryExecution.class)
-                .toInstance(newCachedThreadPool(threadsNamed("query-execution-%d")));
+                .toInstance(newCachedThreadPool(threadsNamed("query-execution-%s")));
         binder.bind(QueryExecutionMBean.class).in(Scopes.SINGLETON);
         newExporter(binder).export(QueryExecutionMBean.class).as(generatedNameOf(QueryExecution.class));
 
@@ -125,7 +130,8 @@ public class CoordinatorModule
         executionBinder.addBinding(ShowTables.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
         executionBinder.addBinding(ShowSchemas.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
         executionBinder.addBinding(ShowCatalogs.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
-        executionBinder.addBinding(UseCollection.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
+        executionBinder.addBinding(Use.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
+        executionBinder.addBinding(ShowSession.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
         executionBinder.addBinding(CreateTable.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
         executionBinder.addBinding(Insert.class).to(SqlQueryExecutionFactory.class).in(Scopes.SINGLETON);
 
@@ -134,6 +140,8 @@ public class CoordinatorModule
         bindDataDefinitionTask(binder, executionBinder, DropTable.class, DropTableTask.class);
         bindDataDefinitionTask(binder, executionBinder, CreateView.class, CreateViewTask.class);
         bindDataDefinitionTask(binder, executionBinder, DropView.class, DropViewTask.class);
+        bindDataDefinitionTask(binder, executionBinder, SetSession.class, SetSessionTask.class);
+        bindDataDefinitionTask(binder, executionBinder, ResetSession.class, ResetSessionTask.class);
 
         jsonCodecBinder(binder).bindJsonCodec(ViewDefinition.class);
     }

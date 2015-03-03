@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.orc.reader;
 
+import com.facebook.presto.orc.OrcCorruptionException;
 import com.facebook.presto.orc.SliceVector;
 import com.facebook.presto.orc.StreamDescriptor;
 import com.facebook.presto.orc.Vector;
@@ -32,10 +33,10 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.facebook.presto.orc.OrcCorruptionException.verifyFormat;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.DATA;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.LENGTH;
 import static com.facebook.presto.orc.metadata.Stream.StreamKind.PRESENT;
+import static com.facebook.presto.orc.reader.OrcReaderUtils.castOrcVector;
 import static com.facebook.presto.orc.stream.MissingStreamSource.missingStreamSource;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -43,6 +44,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class SliceDirectStreamReader
         implements StreamReader
 {
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
     private final StreamDescriptor streamDescriptor;
 
     private int readOffset;
@@ -94,24 +97,32 @@ public class SliceDirectStreamReader
                 readOffset = presentStream.countBitsSet(readOffset);
             }
             if (readOffset > 0) {
-                verifyFormat(lengthStream != null, "Value is not null but length stream is not present");
+                if (lengthStream == null) {
+                    throw new OrcCorruptionException("Value is not null but length stream is not present");
+                }
                 long dataSkipSize = lengthStream.sum(readOffset);
                 if (dataSkipSize > 0) {
-                    verifyFormat(dataStream != null, "Value is not null but data stream is not present");
+                    if (dataStream == null) {
+                        throw new OrcCorruptionException("Value is not null but data stream is not present");
+                    }
                     dataStream.skip(Ints.checkedCast(dataSkipSize));
                 }
             }
         }
 
-        SliceVector sliceVector = (SliceVector) vector;
+        SliceVector sliceVector = castOrcVector(vector, SliceVector.class);
         if (presentStream == null) {
-            verifyFormat(lengthStream != null, "Value is not null but length stream is not present");
+            if (lengthStream == null) {
+                throw new OrcCorruptionException("Value is not null but length stream is not present");
+            }
             lengthStream.nextIntVector(nextBatchSize, lengthVector);
         }
         else {
             int nullValues = presentStream.getUnsetBits(nextBatchSize, isNullVector);
             if (nullValues != nextBatchSize) {
-                verifyFormat(lengthStream != null, "Value is not null but length stream is not present");
+                if (lengthStream == null) {
+                    throw new OrcCorruptionException("Value is not null but length stream is not present");
+                }
                 lengthStream.nextIntVector(nextBatchSize, lengthVector, isNullVector);
             }
         }
@@ -123,9 +134,11 @@ public class SliceDirectStreamReader
             }
         }
 
-        byte[] data = new byte[0];
+        byte[] data = EMPTY_BYTE_ARRAY;
         if (totalLength > 0) {
-            verifyFormat(dataStream != null, "Value is not null but data stream is not present");
+            if (dataStream == null) {
+                throw new OrcCorruptionException("Value is not null but data stream is not present");
+            }
             data = dataStream.next(totalLength);
         }
 

@@ -19,7 +19,6 @@ import com.facebook.presto.spi.block.SortOrder;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.List;
 
@@ -131,7 +130,7 @@ public class OrderByOperator
         this.sortChannels = ImmutableList.copyOf(checkNotNull(sortChannels, "sortChannels is null"));
         this.sortOrder = ImmutableList.copyOf(checkNotNull(sortOrder, "sortOrder is null"));
 
-        this.pageIndex = new PagesIndex(sourceTypes, expectedPositions, operatorContext);
+        this.pageIndex = new PagesIndex(sourceTypes, expectedPositions);
 
         this.pageBuilder = new PageBuilder(this.types);
     }
@@ -166,12 +165,6 @@ public class OrderByOperator
     }
 
     @Override
-    public ListenableFuture<?> isBlocked()
-    {
-        return NOT_BLOCKED;
-    }
-
-    @Override
     public boolean needsInput()
     {
         return state == State.NEEDS_INPUT;
@@ -184,6 +177,7 @@ public class OrderByOperator
         checkNotNull(page, "page is null");
 
         pageIndex.addPage(page);
+        operatorContext.setMemoryReservation(pageIndex.getEstimatedSize().toBytes());
     }
 
     @Override

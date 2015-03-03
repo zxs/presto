@@ -15,6 +15,7 @@ package com.facebook.presto.hive;
 
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.PrestoException;
+import io.airlift.units.DataSize;
 
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_SESSION_PROPERTY;
 
@@ -22,6 +23,9 @@ public final class HiveSessionProperties
 {
     public static final String STORAGE_FORMAT_PROPERTY = "storage_format";
     private static final String OPTIMIZED_READER_ENABLED = "optimized_reader_enabled";
+    private static final String ORC_MAX_MERGE_DISTANCE = "orc_max_merge_distance";
+    private static final String ORC_MAX_BUFFER_SIZE = "orc_max_buffer_size";
+    private static final String ORC_STREAM_BUFFER_SIZE = "orc_stream_buffer_size";
 
     private HiveSessionProperties()
     {
@@ -45,6 +49,51 @@ public final class HiveSessionProperties
     public static boolean isOptimizedReaderEnabled(ConnectorSession session, boolean defaultValue)
     {
         return isEnabled(OPTIMIZED_READER_ENABLED, session, defaultValue);
+    }
+
+    public static DataSize getOrcMaxMergeDistance(ConnectorSession session, DataSize defaultValue)
+    {
+        String maxMergeDistanceString = session.getProperties().get(ORC_MAX_MERGE_DISTANCE);
+        if (maxMergeDistanceString == null) {
+            return defaultValue;
+        }
+
+        try {
+            return DataSize.valueOf(maxMergeDistanceString);
+        }
+        catch (IllegalArgumentException e) {
+            throw new PrestoException(INVALID_SESSION_PROPERTY, ORC_MAX_MERGE_DISTANCE + " is invalid: " + maxMergeDistanceString);
+        }
+    }
+
+    public static DataSize getOrcMaxBufferSize(ConnectorSession session, DataSize defaultValue)
+    {
+        String maxBufferSizeString = session.getProperties().get(ORC_MAX_BUFFER_SIZE);
+        if (maxBufferSizeString == null) {
+            return defaultValue;
+        }
+
+        try {
+            return DataSize.valueOf(maxBufferSizeString);
+        }
+        catch (IllegalArgumentException e) {
+            throw new PrestoException(INVALID_SESSION_PROPERTY, ORC_MAX_BUFFER_SIZE + " is invalid: " + maxBufferSizeString);
+        }
+    }
+
+    public static DataSize getOrcStreamBufferSize(ConnectorSession session, DataSize defaultValue)
+    {
+        String streamBufferSizeString = session.getProperties().get(ORC_STREAM_BUFFER_SIZE);
+        if (streamBufferSizeString == null) {
+            return defaultValue;
+        }
+
+        try {
+            return DataSize.valueOf(streamBufferSizeString);
+        }
+        catch (IllegalArgumentException e) {
+            throw new PrestoException(INVALID_SESSION_PROPERTY, ORC_STREAM_BUFFER_SIZE + " is invalid: " + streamBufferSizeString);
+        }
     }
 
     private static boolean isEnabled(String propertyName, ConnectorSession session, boolean defaultValue)

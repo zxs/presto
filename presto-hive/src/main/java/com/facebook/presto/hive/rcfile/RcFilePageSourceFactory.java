@@ -21,7 +21,6 @@ import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.spi.type.TypeManager;
-import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
@@ -36,10 +35,9 @@ import org.joda.time.DateTimeZone;
 import javax.inject.Inject;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 
-import static com.facebook.presto.hive.HiveColumnHandle.hiveColumnIndexGetter;
-import static com.facebook.presto.hive.HiveColumnHandle.isPartitionKeyPredicate;
 import static com.facebook.presto.hive.HiveSessionProperties.isOptimizedReaderEnabled;
 import static com.facebook.presto.hive.HiveUtil.getDeserializer;
 import static com.facebook.presto.hive.HiveUtil.setReadColumns;
@@ -87,7 +85,7 @@ public class RcFilePageSourceFactory
     {
         // todo remove this when GC issues are resolved
         if (true || !isOptimizedReaderEnabled(session, enabled)) {
-            return Optional.absent();
+            return Optional.empty();
         }
 
         @SuppressWarnings("deprecation")
@@ -101,12 +99,12 @@ public class RcFilePageSourceFactory
             blockLoader = new RcTextBlockLoader(hiveStorageTimeZone, DateTimeZone.forID(session.getTimeZoneKey().getId()));
         }
         else {
-            return Optional.absent();
+            return Optional.empty();
         }
 
         // determine which hive columns we will read
-        List<HiveColumnHandle> readColumns = ImmutableList.copyOf(filter(columns, not(isPartitionKeyPredicate())));
-        List<Integer> readHiveColumnIndexes = ImmutableList.copyOf(transform(readColumns, hiveColumnIndexGetter()));
+        List<HiveColumnHandle> readColumns = ImmutableList.copyOf(filter(columns, not(HiveColumnHandle::isPartitionKey)));
+        List<Integer> readHiveColumnIndexes = ImmutableList.copyOf(transform(readColumns, HiveColumnHandle::getHiveColumnIndex));
 
         // Tell hive the columns we would like to read, this lets hive optimize reading column oriented files
         setReadColumns(configuration, readHiveColumnIndexes);

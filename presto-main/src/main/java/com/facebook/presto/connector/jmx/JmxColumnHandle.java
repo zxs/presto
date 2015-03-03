@@ -13,13 +13,13 @@
  */
 package com.facebook.presto.connector.jmx;
 
-import com.facebook.presto.spi.ConnectorColumnHandle;
 import com.facebook.presto.spi.ColumnMetadata;
+import com.facebook.presto.spi.ConnectorColumnHandle;
 import com.facebook.presto.spi.type.Type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Function;
-import com.google.common.base.Objects;
+
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 
@@ -71,7 +71,7 @@ public class JmxColumnHandle
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(connectorId, columnName, columnType);
+        return Objects.hash(connectorId, columnName, columnType);
     }
 
     @Override
@@ -83,8 +83,10 @@ public class JmxColumnHandle
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-        final JmxColumnHandle other = (JmxColumnHandle) obj;
-        return Objects.equal(this.connectorId, other.connectorId) && Objects.equal(this.columnName, other.columnName) && Objects.equal(this.columnType, other.columnType);
+        JmxColumnHandle other = (JmxColumnHandle) obj;
+        return Objects.equals(this.connectorId, other.connectorId) &&
+                Objects.equals(this.columnName, other.columnName) &&
+                Objects.equals(this.columnType, other.columnType);
     }
 
     @Override
@@ -100,17 +102,5 @@ public class JmxColumnHandle
     public ColumnMetadata getColumnMetadata()
     {
         return new ColumnMetadata(columnName, columnType, ordinalPosition, false);
-    }
-
-    public static Function<JmxColumnHandle, ColumnMetadata> columnMetadataGetter()
-    {
-        return new Function<JmxColumnHandle, ColumnMetadata>()
-        {
-            @Override
-            public ColumnMetadata apply(JmxColumnHandle jmxColumnHandle)
-            {
-                return jmxColumnHandle.getColumnMetadata();
-            }
-        };
     }
 }

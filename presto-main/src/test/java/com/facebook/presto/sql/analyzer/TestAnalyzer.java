@@ -26,12 +26,13 @@ import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.tree.Statement;
 import com.facebook.presto.type.TypeRegistry;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import io.airlift.json.JsonCodec;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+
+import java.util.Optional;
 
 import static com.facebook.presto.metadata.ViewDefinition.ViewColumn;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -43,6 +44,7 @@ import static com.facebook.presto.sql.analyzer.SemanticErrorCode.COLUMN_NAME_NOT
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.DUPLICATE_COLUMN_NAME;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.DUPLICATE_RELATION;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.INVALID_ORDINAL;
+import static com.facebook.presto.sql.analyzer.SemanticErrorCode.INVALID_WINDOW_FRAME;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISMATCHED_COLUMN_ALIASES;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISMATCHED_SET_COLUMN_TYPES;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISSING_ATTRIBUTE;
@@ -93,28 +95,43 @@ public class TestAnalyzer
     public void testNonComparableGroupBy()
             throws Exception
     {
-        assertFails(TYPE_MISMATCH, "SELECT * FROM (SELECT ARRAY[1,2]) GROUP BY 1");
+        assertFails(TYPE_MISMATCH, "SELECT * FROM (SELECT approx_set(1)) GROUP BY 1");
     }
 
     @Test
     public void testNonComparableWindowPartition()
             throws Exception
     {
-        assertFails(TYPE_MISMATCH, "SELECT row_number() OVER (PARTITION BY t.x) FROM (VALUES(null)) AS t(x)");
+        assertFails(TYPE_MISMATCH, "SELECT row_number() OVER (PARTITION BY t.x) FROM (VALUES(CAST (NULL AS HyperLogLog))) AS t(x)");
     }
 
     @Test
     public void testNonComparableWindowOrder()
             throws Exception
     {
-        assertFails(TYPE_MISMATCH, "SELECT row_number() OVER (ORDER BY t.x) FROM (VALUES(null)) AS t(x)");
+        assertFails(TYPE_MISMATCH, "SELECT row_number() OVER (ORDER BY t.x) FROM (VALUES(color('red'))) AS t(x)");
+    }
+
+    @Test
+    public void testNonComparableDistinctAggregation()
+            throws Exception
+    {
+        assertFails(TYPE_MISMATCH, "SELECT count(DISTINCT x) FROM (SELECT approx_set(1) x)");
     }
 
     @Test
     public void testNonComparableDistinct()
             throws Exception
     {
-        assertFails(TYPE_MISMATCH, "SELECT count(DISTINCT x) FROM (SELECT approx_set(1) x)");
+        assertFails(TYPE_MISMATCH, "SELECT DISTINCT * FROM (SELECT approx_set(1) x)");
+        assertFails(TYPE_MISMATCH, "SELECT DISTINCT x FROM (SELECT approx_set(1) x)");
+    }
+
+    @Test
+    public void testInSubqueryTypes()
+            throws Exception
+    {
+        assertFails(TYPE_MISMATCH, "SELECT * FROM (VALUES ('a')) t(y) WHERE y IN (VALUES (1))");
     }
 
     @Test
@@ -122,6 +139,10 @@ public class TestAnalyzer
             throws Exception
     {
         assertFails(NOT_SUPPORTED, "SELECT 'a', (VALUES (1)) GROUP BY 1");
+        assertFails(NOT_SUPPORTED, "SELECT 'a', (SELECT (1))");
+        assertFails(NOT_SUPPORTED, "SELECT * FROM t1 WHERE (VALUES 1) = 2");
+        assertFails(NOT_SUPPORTED, "SELECT * FROM t1 WHERE (VALUES 1) IN (VALUES 1)");
+        analyze("SELECT * FROM (SELECT 1) t1(x) WHERE x IN (SELECT 1)");
     }
 
     @Test
@@ -160,6 +181,15 @@ public class TestAnalyzer
     {
         assertFails(INVALID_ORDINAL, "SELECT * FROM t1 ORDER BY 10");
         assertFails(INVALID_ORDINAL, "SELECT * FROM t1 ORDER BY 0");
+    }
+
+    @Test
+    public void testOrderByNonComparable()
+            throws Exception
+    {
+        assertFails(TYPE_MISMATCH, "SELECT x FROM (SELECT approx_set(1) x) ORDER BY 1");
+        assertFails(TYPE_MISMATCH, "SELECT * FROM (SELECT approx_set(1) x) ORDER BY 1");
+        assertFails(TYPE_MISMATCH, "SELECT x FROM (SELECT approx_set(1) x) ORDER BY x");
     }
 
     @Test
@@ -329,7 +359,6 @@ public class TestAnalyzer
     public void testNonEquiJoin()
             throws Exception
     {
-        assertFails(NOT_SUPPORTED, "SELECT * FROM t1 JOIN t2 ON t1.a < t2.a");
         assertFails(NOT_SUPPORTED, "SELECT * FROM t1 JOIN t2 ON t1.a + t2.a = 1");
         assertFails(NOT_SUPPORTED, "SELECT * FROM t1 JOIN t2 ON t1.a = t2.a OR t1.b = t2.b");
     }
@@ -373,18 +402,38 @@ public class TestAnalyzer
     }
 
     @Test
+    public void testWindowFunctionWithoutOverClause()
+    {
+        assertFails(WINDOW_REQUIRES_OVER, "SELECT row_number()");
+    }
+
+    @Test
+    public void testInvalidWindowFrame()
+            throws Exception
+    {
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS UNBOUNDED FOLLOWING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS 2 FOLLOWING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS BETWEEN CURRENT ROW AND 5 PRECEDING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS BETWEEN 2 FOLLOWING AND 5 PRECEDING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (ROWS BETWEEN 2 FOLLOWING AND CURRENT ROW)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (RANGE 2 PRECEDING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (RANGE BETWEEN 2 PRECEDING AND CURRENT ROW)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (RANGE BETWEEN CURRENT ROW AND 5 FOLLOWING)");
+        assertFails(INVALID_WINDOW_FRAME, "SELECT rank() OVER (RANGE BETWEEN 2 PRECEDING AND 5 FOLLOWING)");
+
+        assertFails(TYPE_MISMATCH, "SELECT rank() OVER (ROWS 0.5 PRECEDING)");
+        assertFails(TYPE_MISMATCH, "SELECT rank() OVER (ROWS 'foo' PRECEDING)");
+        assertFails(TYPE_MISMATCH, "SELECT rank() OVER (ROWS BETWEEN CURRENT ROW AND 0.5 FOLLOWING)");
+        assertFails(TYPE_MISMATCH, "SELECT rank() OVER (ROWS BETWEEN CURRENT ROW AND 'foo' FOLLOWING)");
+    }
+
+    @Test
     public void testDistinctInWindowFunctionParameter()
             throws Exception
     {
         assertFails(NOT_SUPPORTED, "SELECT a, count(DISTINCT b) OVER () FROM t1");
-    }
-
-    @Test
-    public void testWindowFrameNotSupported()
-            throws Exception
-    {
-        assertFails(NOT_SUPPORTED, "SELECT count(*) over (ORDER BY a ROWS UNBOUNDED PRECEDING) FROM t1");
-        assertFails(NOT_SUPPORTED, "SELECT count(*) over (ORDER BY a ROWS UNBOUNDED FOLLOWING) FROM t1");
     }
 
     @Test
@@ -428,12 +477,46 @@ public class TestAnalyzer
     }
 
     @Test
+    public void testWithCaseInsensitiveResolution()
+            throws Exception
+    {
+        // TODO: verify output
+        analyze("WITH AB AS (SELECT * FROM t1) SELECT * FROM ab");
+    }
+
+    @Test
+    public void testInsert()
+            throws Exception
+    {
+        analyze("INSERT INTO t1 SELECT * FROM t1");
+        analyze("INSERT INTO t3 SELECT * FROM t3");
+        analyze("INSERT INTO t3 SELECT a, b FROM t3");
+        assertFails(MISMATCHED_SET_COLUMN_TYPES, "INSERT INTO t1 VALUES (1, 2)");
+
+        // ignore t5 hidden column
+        analyze("INSERT INTO t5 VALUES (1)");
+
+        // fail if hidden column provided
+        assertFails(MISMATCHED_SET_COLUMN_TYPES, "INSERT INTO t5 VALUES (1, 2)");
+    }
+
+    @Test
     public void testDuplicateWithQuery()
             throws Exception
     {
         assertFails(DUPLICATE_RELATION,
                 "WITH a AS (SELECT * FROM t1)," +
                         "     a AS (SELECT * FROM t1)" +
+                        "SELECT * FROM a");
+    }
+
+    @Test
+    public void testCaseInsensitiveDuplicateWithQuery()
+            throws Exception
+    {
+        assertFails(DUPLICATE_RELATION,
+                "WITH a AS (SELECT * FROM t1)," +
+                        "     A AS (SELECT * FROM t1)" +
                         "SELECT * FROM a");
     }
 
@@ -479,9 +562,11 @@ public class TestAnalyzer
         // cast
         assertFails(TYPE_MISMATCH, "SELECT CAST(date '2014-01-01' AS bigint)");
         assertFails(TYPE_MISMATCH, "SELECT TRY_CAST(date '2014-01-01' AS bigint)");
+        assertFails(TYPE_MISMATCH, "SELECT CAST(null AS UNKNOWN)");
 
-        // arithmetic negation
+        // arithmetic unary
         assertFails(TYPE_MISMATCH, "SELECT -'a' FROM t1");
+        assertFails(TYPE_MISMATCH, "SELECT +'a' FROM t1");
 
         // arithmetic addition/subtraction
         assertFails(TYPE_MISMATCH, "SELECT 'a' + 1 FROM t1");
@@ -565,9 +650,9 @@ public class TestAnalyzer
     public void testMismatchedUnionQueries()
             throws Exception
     {
-        assertFails(MISMATCHED_SET_COLUMN_TYPES, "SELECT 1 UNION SELECT 'a'");
-        assertFails(MISMATCHED_SET_COLUMN_TYPES, "SELECT a FROM t1 UNION SELECT 'a'");
-        assertFails(MISMATCHED_SET_COLUMN_TYPES, "(SELECT 1) UNION SELECT 'a'");
+        assertFails(TYPE_MISMATCH, "SELECT 1 UNION SELECT 'a'");
+        assertFails(TYPE_MISMATCH, "SELECT a FROM t1 UNION SELECT 'a'");
+        assertFails(TYPE_MISMATCH, "(SELECT 1) UNION SELECT 'a'");
         assertFails(MISMATCHED_SET_COLUMN_TYPES, "SELECT 1, 2 UNION SELECT 1");
         assertFails(MISMATCHED_SET_COLUMN_TYPES, "SELECT 'a' UNION SELECT 'b', 'c'");
         assertFails(MISMATCHED_SET_COLUMN_TYPES, "TABLE t2 UNION SELECT 'a'");
@@ -639,10 +724,10 @@ public class TestAnalyzer
     }
 
     @Test
-    public void testUseCollection()
+    public void testUse()
             throws Exception
     {
-        assertFails(NOT_SUPPORTED, "USE CATALOG default");
+        assertFails(NOT_SUPPORTED, "USE default");
     }
 
     @Test
@@ -686,13 +771,21 @@ public class TestAnalyzer
         metadata.createTable(SESSION, "tpch", new TableMetadata("tpch", new ConnectorTableMetadata(table3,
                 ImmutableList.<ColumnMetadata>of(
                         new ColumnMetadata("a", BIGINT, 0, false),
-                        new ColumnMetadata("b", BIGINT, 1, false)))));
+                        new ColumnMetadata("b", BIGINT, 1, false),
+                        new ColumnMetadata("x", BIGINT, 2, false, null, true)))));
 
         // table in different catalog
         SchemaTableName table4 = new SchemaTableName("s2", "t4");
         metadata.createTable(SESSION, "c2", new TableMetadata("tpch", new ConnectorTableMetadata(table4,
                 ImmutableList.<ColumnMetadata>of(
                         new ColumnMetadata("a", BIGINT, 0, false)))));
+
+        // table with a hidden column
+        SchemaTableName table5 = new SchemaTableName("default", "t5");
+        metadata.createTable(SESSION, "tpch", new TableMetadata("tpch", new ConnectorTableMetadata(table5,
+                ImmutableList.<ColumnMetadata>of(
+                        new ColumnMetadata("a", BIGINT, 0, false),
+                        new ColumnMetadata("b", BIGINT, 1, false, null, true)))));
 
         // valid view referencing table in same schema
         String viewData1 = JsonCodec.jsonCodec(ViewDefinition.class).toJson(
@@ -723,7 +816,7 @@ public class TestAnalyzer
                         .build(),
                 metadata,
                 SQL_PARSER,
-                Optional.<QueryExplainer>absent(),
+                Optional.empty(),
                 true);
 
         approximateDisabledAnalyzer = new Analyzer(
@@ -737,7 +830,7 @@ public class TestAnalyzer
                         .build(),
                 metadata,
                 SQL_PARSER,
-                Optional.<QueryExplainer>absent(),
+                Optional.empty(),
                 false);
     }
 
@@ -759,11 +852,5 @@ public class TestAnalyzer
                 fail(format("Expected error %s, but found %s: %s", error, e.getCode(), e.getMessage()), e);
             }
         }
-    }
-
-    @Test
-    public void testWindowFunctionWithoutOverClause()
-    {
-        assertFails(WINDOW_REQUIRES_OVER, "SELECT row_number()");
     }
 }

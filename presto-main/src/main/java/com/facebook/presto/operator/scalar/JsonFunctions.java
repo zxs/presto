@@ -21,7 +21,6 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.MappingJsonFactory;
-import com.google.common.base.Charsets;
 import com.google.common.primitives.Doubles;
 import io.airlift.slice.Slice;
 
@@ -59,13 +58,6 @@ public final class JsonFunctions
     public static JsonPath castToJsonPath(@SqlType(StandardTypes.VARCHAR) Slice pattern)
     {
         return new JsonPath(pattern.toString(UTF_8));
-    }
-
-    @ScalarOperator(OperatorType.CAST)
-    @SqlType(StandardTypes.JSON)
-    public static Slice castToJson(@SqlType(StandardTypes.VARCHAR) Slice slice)
-    {
-        return slice;
     }
 
     @ScalarOperator(OperatorType.CAST)
@@ -248,7 +240,7 @@ public final class JsonFunctions
     @SqlType(StandardTypes.BOOLEAN)
     public static Boolean jsonArrayContains(@SqlType(StandardTypes.JSON) Slice json, @SqlType(StandardTypes.VARCHAR) Slice value)
     {
-        String valueString = value.toString(Charsets.UTF_8);
+        String valueString = value.toString(UTF_8);
 
         try (JsonParser parser = JSON_FACTORY.createJsonParser(json.getInput())) {
             if (parser.nextToken() != START_ARRAY) {

@@ -16,7 +16,6 @@ package com.facebook.presto.metadata;
 import com.facebook.presto.connector.system.SystemTablesManager;
 import com.facebook.presto.failureDetector.FailureDetector;
 import com.facebook.presto.spi.Node;
-import com.facebook.presto.util.IterableTransformer;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSetMultimap;
@@ -36,10 +35,9 @@ import java.net.URISyntaxException;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableSet;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.base.Predicates.in;
-import static com.google.common.base.Predicates.not;
 import static java.util.Arrays.asList;
 import static java.util.Locale.ENGLISH;
 
@@ -67,6 +65,9 @@ public final class DiscoveryNodeManager
     @GuardedBy("this")
     private PrestoNode currentNode;
 
+    @GuardedBy("this")
+    private Set<Node> coordinators;
+
     @Inject
     public DiscoveryNodeManager(@ServiceType("presto") ServiceSelector serviceSelector, NodeInfo nodeInfo, FailureDetector failureDetector, NodeVersion expectedNodeVersion)
     {
@@ -85,15 +86,16 @@ public final class DiscoveryNodeManager
 
         // This is currently a blacklist.
         // TODO: make it a whitelist (a failure-detecting service selector) and maybe build in support for injecting this in airlift
-        Set<ServiceDescriptor> services = IterableTransformer.on(serviceSelector.selectAllServices())
-                .select(not(in(failureDetector.getFailed())))
-                .set();
+        Set<ServiceDescriptor> services = serviceSelector.selectAllServices().stream()
+                .filter(service -> !failureDetector.getFailed().contains(service))
+                .collect(toImmutableSet());
 
         // reset current node
         currentNode = null;
 
         ImmutableSet.Builder<Node> activeNodesBuilder = ImmutableSet.builder();
         ImmutableSet.Builder<Node> inactiveNodesBuilder = ImmutableSet.builder();
+        ImmutableSet.Builder<Node> coordinatorsBuilder = ImmutableSet.builder();
         ImmutableSetMultimap.Builder<String, Node> byDataSourceBuilder = ImmutableSetMultimap.builder();
 
         for (ServiceDescriptor service : services) {
@@ -110,6 +112,9 @@ public final class DiscoveryNodeManager
 
                 if (isActive(node)) {
                     activeNodesBuilder.add(node);
+                    if (Boolean.parseBoolean(service.getProperties().get("coordinator"))) {
+                        coordinatorsBuilder.add(node);
+                    }
 
                     // record available active nodes organized by data source
                     String dataSources = service.getProperties().get("datasources");
@@ -131,6 +136,7 @@ public final class DiscoveryNodeManager
 
         allNodes = new AllNodes(activeNodesBuilder.build(), inactiveNodesBuilder.build());
         activeNodesByDataSource = byDataSourceBuilder.build();
+        coordinators = coordinatorsBuilder.build();
 
         checkState(currentNode != null, "INVARIANT: current node not returned from service selector");
     }
@@ -172,6 +178,13 @@ public final class DiscoveryNodeManager
     {
         refreshIfNecessary();
         return currentNode;
+    }
+
+    @Override
+    public synchronized Set<Node> getCoordinators()
+    {
+        refreshIfNecessary();
+        return coordinators;
     }
 
     private static URI getHttpUri(ServiceDescriptor descriptor)

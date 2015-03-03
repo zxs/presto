@@ -13,10 +13,10 @@
  */
 package com.facebook.presto.sql.tree;
 
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -57,7 +57,7 @@ public class Explain
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(statement, options);
+        return Objects.hash(statement, options);
     }
 
     @Override
@@ -70,8 +70,8 @@ public class Explain
             return false;
         }
         Explain o = (Explain) obj;
-        return Objects.equal(statement, o.statement) &&
-                Objects.equal(options, o.options);
+        return Objects.equals(statement, o.statement) &&
+                Objects.equals(options, o.options);
     }
 
     @Override

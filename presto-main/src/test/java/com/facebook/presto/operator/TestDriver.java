@@ -46,8 +46,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static com.facebook.presto.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
-import static com.facebook.presto.operator.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -69,7 +69,7 @@ public class TestDriver
     public void setUp()
             throws Exception
     {
-        executor = newCachedThreadPool(daemonThreadsNamed("test"));
+        executor = newCachedThreadPool(daemonThreadsNamed("test-%s"));
 
         driverContext = new TaskContext(new TaskId("query", "stage", "task"), executor, TEST_SESSION)
                 .addPipelineContext(true, true)
@@ -121,8 +121,12 @@ public class TestDriver
         driver.close();
         assertTrue(driver.isFinished());
 
-        assertTrue(sink.isFinished());
-        assertTrue(source.isFinished());
+        // finish is only called in normal operations
+        assertFalse(source.isFinished());
+        assertFalse(sink.isFinished());
+
+        // close is always called (values operator doesn't have a closed state)
+        assertTrue(sink.isClosed());
     }
 
     @Test
@@ -201,7 +205,7 @@ public class TestDriver
     public void testBrokenOperatorProcessWhileClosing()
             throws Exception
     {
-        BrokenOperator brokenOperator = new BrokenOperator(driverContext.addOperatorContext(0, "source"));
+        BrokenOperator brokenOperator = new BrokenOperator(driverContext.addOperatorContext(0, "source"), true);
         final Driver driver = new Driver(driverContext, brokenOperator, createSinkOperator(brokenOperator));
 
         assertSame(driver.getDriverContext(), driverContext);

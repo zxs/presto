@@ -14,6 +14,7 @@
 package com.facebook.presto.operator;
 
 import com.facebook.presto.ExceededMemoryLimitException;
+import com.facebook.presto.RowPagesBuilder;
 import com.facebook.presto.execution.TaskId;
 import com.facebook.presto.metadata.MetadataManager;
 import com.facebook.presto.operator.HashAggregationOperator.HashAggregationOperatorFactory;
@@ -27,7 +28,6 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.planner.plan.AggregationNode.Step;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.testing.MaterializedResult;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
 import io.airlift.slice.Slices;
@@ -41,15 +41,16 @@ import org.testng.annotations.Test;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
+import static com.facebook.presto.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.operator.OperatorAssertion.assertOperatorEqualsIgnoreOrder;
 import static com.facebook.presto.operator.OperatorAssertion.dropChannel;
 import static com.facebook.presto.operator.OperatorAssertion.toMaterializedResult;
 import static com.facebook.presto.operator.OperatorAssertion.toPages;
 import static com.facebook.presto.operator.OperatorAssertion.without;
-import static com.facebook.presto.operator.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.operator.aggregation.AverageAggregations.LONG_AVERAGE;
 import static com.facebook.presto.operator.aggregation.CountAggregation.COUNT;
 import static com.facebook.presto.operator.aggregation.LongSumAggregation.LONG_SUM;
@@ -78,7 +79,7 @@ public class TestHashAggregationOperator
     @BeforeMethod
     public void setUp()
     {
-        executor = newCachedThreadPool(daemonThreadsNamed("test"));
+        executor = newCachedThreadPool(daemonThreadsNamed("test-%s"));
 
         driverContext = new TaskContext(new TaskId("query", "stage", "task"), executor, TEST_SESSION)
                 .addPipelineContext(true, true)
@@ -117,12 +118,12 @@ public class TestHashAggregationOperator
                 ImmutableList.of(VARCHAR),
                 hashChannels,
                 Step.SINGLE,
-                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        LONG_SUM.bind(ImmutableList.of(3), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        LONG_AVERAGE.bind(ImmutableList.of(3), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        VAR_BINARY_MAX.bind(ImmutableList.of(2), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        countVarcharColumn.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        countBooleanColumn.bind(ImmutableList.of(4), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0),
+                        LONG_SUM.bind(ImmutableList.of(3), Optional.empty(), Optional.empty(), 1.0),
+                        LONG_AVERAGE.bind(ImmutableList.of(3), Optional.empty(), Optional.empty(), 1.0),
+                        VAR_BINARY_MAX.bind(ImmutableList.of(2), Optional.empty(), Optional.empty(), 1.0),
+                        countVarcharColumn.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0),
+                        countBooleanColumn.bind(ImmutableList.of(4), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));
@@ -165,10 +166,10 @@ public class TestHashAggregationOperator
                 ImmutableList.of(VARCHAR),
                 hashChannels,
                 Step.SINGLE,
-                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        LONG_SUM.bind(ImmutableList.of(3), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        LONG_AVERAGE.bind(ImmutableList.of(3), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        VAR_BINARY_MAX.bind(ImmutableList.of(2), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0),
+                        LONG_SUM.bind(ImmutableList.of(3), Optional.empty(), Optional.empty(), 1.0),
+                        LONG_AVERAGE.bind(ImmutableList.of(3), Optional.empty(), Optional.empty(), 1.0),
+                        VAR_BINARY_MAX.bind(ImmutableList.of(2), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));
@@ -202,7 +203,7 @@ public class TestHashAggregationOperator
                 ImmutableList.of(VARCHAR),
                 hashChannels,
                 Step.SINGLE,
-                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));
@@ -236,7 +237,7 @@ public class TestHashAggregationOperator
                 ImmutableList.of(VARCHAR),
                 hashChannels,
                 Step.SINGLE,
-                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));
@@ -265,8 +266,8 @@ public class TestHashAggregationOperator
                 ImmutableList.of(BIGINT),
                 hashChannels,
                 Step.SINGLE,
-                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0),
-                        LONG_AVERAGE.bind(ImmutableList.of(1), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(COUNT.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0),
+                        LONG_AVERAGE.bind(ImmutableList.of(1), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));
@@ -294,7 +295,7 @@ public class TestHashAggregationOperator
                 ImmutableList.of(BIGINT),
                 hashChannels,
                 Step.PARTIAL,
-                ImmutableList.of(LONG_SUM.bind(ImmutableList.of(0), Optional.<Integer>absent(), Optional.<Integer>absent(), 1.0)),
+                ImmutableList.of(LONG_SUM.bind(ImmutableList.of(0), Optional.empty(), Optional.empty(), 1.0)),
                 rowPagesBuilder.getHashChannel(),
                 100_000,
                 new DataSize(16, MEGABYTE));

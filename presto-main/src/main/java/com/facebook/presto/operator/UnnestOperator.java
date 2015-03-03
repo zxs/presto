@@ -19,7 +19,6 @@ import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.type.ArrayType;
 import com.facebook.presto.type.MapType;
 import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
 import io.airlift.slice.Slice;
 
 import java.util.ArrayList;
@@ -143,12 +142,6 @@ public class UnnestOperator
     }
 
     @Override
-    public ListenableFuture<?> isBlocked()
-    {
-        return NOT_BLOCKED;
-    }
-
-    @Override
     public boolean needsInput()
     {
         return !finishing && !pageBuilder.isFull() && currentPage == null;
@@ -221,6 +214,8 @@ public class UnnestOperator
                     type.appendTo(currentPage.getBlock(channel), currentPosition, pageBuilder.getBlockBuilder(replicateChannel));
                 }
                 int offset = replicateTypes.size();
+
+                pageBuilder.declarePosition();
                 for (Unnester unnester : unnesters) {
                     if (unnester.hasNext()) {
                         unnester.appendNext(pageBuilder, offset);

@@ -5,12 +5,12 @@
     <parent>
         <groupId>io.airlift</groupId>
         <artifactId>airbase</artifactId>
-        <version>28</version>
+        <version>34</version>
     </parent>
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.86-SNAPSHOT</version>
+    <version>0.97-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -42,9 +42,8 @@
         <air.check.fail-checkstyle>true</air.check.fail-checkstyle>
         <air.check.skip-checkstyle>false</air.check.skip-checkstyle>
 
-        <dep.antlr.version>3.4</dep.antlr.version>
-        <dep.slice.version>0.7</dep.slice.version>
-        <dep.airlift.version>0.97</dep.airlift.version>
+        <dep.antlr.version>4.3</dep.antlr.version>
+        <dep.airlift.version>0.104-SNAPSHOT</dep.airlift.version>
         <dep.packaging.version>${dep.airlift.version}</dep.packaging.version>
 
         <cli.skip-execute>true</cli.skip-execute>
@@ -78,6 +77,7 @@
         <module>presto-tests</module>
         <module>presto-jdbc</module>
         <module>presto-cli</module>
+        <module>presto-benchmark-driver</module>
         <module>presto-server</module>
         <module>presto-docs</module>
         <module>presto-verifier</module>
@@ -145,6 +145,12 @@
             <dependency>
                 <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-raptor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-cli</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -219,13 +225,13 @@
             <dependency>
                 <groupId>com.facebook.presto.hadoop</groupId>
                 <artifactId>hadoop-cdh4</artifactId>
-                <version>0.6</version>
+                <version>0.8</version>
             </dependency>
 
             <dependency>
                 <groupId>com.facebook.presto.hive</groupId>
                 <artifactId>hive-apache</artifactId>
-                <version>0.9</version>
+                <version>0.10</version>
             </dependency>
 
             <dependency>
@@ -387,7 +393,7 @@
             <dependency>
                 <groupId>io.airlift.tpch</groupId>
                 <artifactId>tpch</artifactId>
-                <version>0.2</version>
+                <version>0.4</version>
             </dependency>
 
             <dependency>
@@ -418,12 +424,6 @@
                 <groupId>io.airlift</groupId>
                 <artifactId>airline</artifactId>
                 <version>0.6</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.airlift</groupId>
-                <artifactId>floatingdecimal</artifactId>
-                <version>0.2</version>
             </dependency>
 
             <dependency>
@@ -482,20 +482,20 @@
 
             <dependency>
                 <groupId>org.antlr</groupId>
-                <artifactId>antlr-runtime</artifactId>
+                <artifactId>antlr4-runtime</artifactId>
                 <version>${dep.antlr.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>antlr</groupId>
-                        <artifactId>antlr</artifactId>
-                    </exclusion>
-                </exclusions>
+            </dependency>
+
+            <dependency>
+                <groupId>org.antlr</groupId>
+                <artifactId>antlr4-annotations</artifactId>
+                <version>${dep.antlr.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>jline</groupId>
                 <artifactId>jline</artifactId>
-                <version>2.10</version>
+                <version>2.12</version>
             </dependency>
 
             <dependency>
@@ -507,11 +507,19 @@
             <dependency>
                 <groupId>org.apache.thrift</groupId>
                 <artifactId>libthrift</artifactId>
-                <version>0.9.0</version>
+                <version>0.9.1</version>
                 <exclusions>
                     <exclusion>
-                        <groupId>commons-logging</groupId>
-                        <artifactId>commons-logging</artifactId>
+                        <groupId>org.apache.commons</groupId>
+                        <artifactId>commons-lang3</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.httpcomponents</groupId>
+                        <artifactId>httpcore</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.httpcomponents</groupId>
+                        <artifactId>httpclient</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
@@ -543,7 +551,7 @@
             <dependency>
                 <groupId>io.airlift.discovery</groupId>
                 <artifactId>discovery-server</artifactId>
-                <version>1.20</version>
+                <version>1.22</version>
             </dependency>
 
             <dependency>
@@ -629,9 +637,9 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <configuration combine.children="append">
-                        <argLine>${argLine} -Duser.timezone=${test.timezone} -Xmx2g -Xms2g -XX:MaxPermSize=512m</argLine>
+                        <argLine>${argLine} -Duser.timezone=${test.timezone} -Xmx2g -Xms2g</argLine>
                         <parallel>methods</parallel>
-                        <threadCount>8</threadCount>
+                        <threadCount>4</threadCount>
                         <systemPropertyVariables>
                             <user.timezone>${test.timezone}</user.timezone>
                             <java.util.logging.SimpleFormatter.format>%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS %4$s %5$s%6$s%n</java.util.logging.SimpleFormatter.format>
@@ -640,22 +648,33 @@
                 </plugin>
 
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <configuration combine.children="append">
+                        <additionalparam>-Xdoclint:none</additionalparam>
+                    </configuration>
+                </plugin>
+
+                <plugin>
                     <groupId>org.antlr</groupId>
-                    <artifactId>antlr3-maven-plugin</artifactId>
+                    <artifactId>antlr4-maven-plugin</artifactId>
                     <version>${dep.antlr.version}</version>
                     <executions>
                         <execution>
                             <goals>
-                                <goal>antlr</goal>
+                                <goal>antlr4</goal>
                             </goals>
                         </execution>
                     </executions>
+                    <configuration>
+                        <visitor>true</visitor>
+                    </configuration>
                 </plugin>
 
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
-                    <version>2.2</version>
+                    <version>2.3</version>
                 </plugin>
 
                 <plugin>
@@ -793,6 +812,24 @@
 
         <plugins>
             <plugin>
+                <groupId>org.gaul</groupId>
+                <artifactId>modernizer-maven-plugin</artifactId>
+                <version>1.2.2</version>
+                <configuration>
+                    <javaVersion>1.8</javaVersion>
+                    <failOnViolations>false</failOnViolations>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>modernizer</id>
+                        <goals>
+                            <goal>modernizer</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>2.11</version>
@@ -812,6 +849,24 @@
                         </configuration>
                     </execution>
                 </executions>
+                <dependencies>
+                    <!-- The version of checkstyle the plugin depends on doesn't support Java 8,
+                         so override it manually until a new version of the plugin is released.
+                         This is copied verbatim from the dependency declaration in the checkstyle
+                         plugin -->
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>6.1.1</version>
+                        <exclusions>
+                            <!-- MCHECKSTYLE-156 -->
+                            <exclusion>
+                                <groupId>com.sun</groupId>
+                                <artifactId>tools</artifactId>
+                            </exclusion>
+                        </exclusions>
+                    </dependency>
+                </dependencies>
             </plugin>
 
             <plugin>
@@ -826,6 +881,14 @@
                 <artifactId>provisio-maven-plugin</artifactId>
                 <version>0.1.11</version>
                 <extensions>true</extensions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration combine.children="append">
+                    <fork>false</fork>
+                </configuration>
             </plugin>
         </plugins>
     </build>

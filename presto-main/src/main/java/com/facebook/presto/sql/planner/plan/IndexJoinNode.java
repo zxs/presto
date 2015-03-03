@@ -16,13 +16,12 @@ package com.facebook.presto.sql.planner.plan;
 import com.facebook.presto.sql.planner.Symbol;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 
 import javax.annotation.concurrent.Immutable;
 
 import java.util.List;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -113,7 +112,7 @@ public class IndexJoinNode
     @Override
     public List<PlanNode> getSources()
     {
-        return ImmutableList.of(probeSource);
+        return ImmutableList.of(probeSource, indexSource);
     }
 
     @Override
@@ -153,30 +152,6 @@ public class IndexJoinNode
         public Symbol getIndex()
         {
             return index;
-        }
-
-        public static Function<EquiJoinClause, Symbol> probeGetter()
-        {
-            return new Function<EquiJoinClause, Symbol>()
-            {
-                @Override
-                public Symbol apply(EquiJoinClause input)
-                {
-                    return input.getProbe();
-                }
-            };
-        }
-
-        public static Function<EquiJoinClause, Symbol> indexGetter()
-        {
-            return new Function<EquiJoinClause, Symbol>()
-            {
-                @Override
-                public Symbol apply(EquiJoinClause input)
-                {
-                    return input.getIndex();
-                }
-            };
         }
     }
 }

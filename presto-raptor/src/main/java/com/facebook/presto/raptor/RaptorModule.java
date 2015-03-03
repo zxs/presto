@@ -15,6 +15,7 @@ package com.facebook.presto.raptor;
 
 import com.facebook.presto.raptor.metadata.DatabaseShardManager;
 import com.facebook.presto.raptor.metadata.ForMetadata;
+import com.facebook.presto.raptor.metadata.ShardInfo;
 import com.facebook.presto.raptor.metadata.ShardManager;
 import com.facebook.presto.raptor.metadata.TableColumn;
 import com.facebook.presto.spi.type.TypeManager;
@@ -29,6 +30,7 @@ import org.skife.jdbi.v2.tweak.ConnectionFactory;
 import javax.inject.Singleton;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static io.airlift.json.JsonCodecBinder.jsonCodecBinder;
 
 public class RaptorModule
         implements Module
@@ -48,10 +50,12 @@ public class RaptorModule
         binder.bind(RaptorMetadata.class).in(Scopes.SINGLETON);
         binder.bind(RaptorSplitManager.class).in(Scopes.SINGLETON);
         binder.bind(RaptorPageSourceProvider.class).in(Scopes.SINGLETON);
-        binder.bind(RaptorRecordSinkProvider.class).in(Scopes.SINGLETON);
+        binder.bind(RaptorPageSinkProvider.class).in(Scopes.SINGLETON);
         binder.bind(RaptorHandleResolver.class).in(Scopes.SINGLETON);
 
         binder.bind(ShardManager.class).to(DatabaseShardManager.class).in(Scopes.SINGLETON);
+
+        jsonCodecBinder(binder).bindJsonCodec(ShardInfo.class);
     }
 
     @ForMetadata

@@ -15,7 +15,6 @@ package com.facebook.presto.tests;
 
 import com.facebook.presto.metadata.FunctionListBuilder;
 import com.facebook.presto.metadata.ParametricFunction;
-import com.facebook.presto.operator.scalar.MapConstructor;
 import com.facebook.presto.operator.scalar.TestingRowConstructor;
 import com.facebook.presto.spi.type.TimeZoneKey;
 import com.facebook.presto.spi.type.Type;
@@ -78,7 +77,6 @@ public abstract class AbstractTestQueries
             .scalar(CustomAdd.class)
             .scalar(CreateHll.class)
             .scalar(TestingRowConstructor.class)
-            .function(new MapConstructor(2, new TypeRegistry()))
             .getFunctions();
 
     protected AbstractTestQueries(QueryRunner queryRunner)
@@ -87,13 +85,41 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void selectNull()
+            throws Exception
+    {
+        assertQuery("SELECT NULL", "SELECT NULL FROM (SELECT * FROM ORDERS LIMIT 1)");
+    }
+
+    @Test
+    public void testNonDeterministicFilter()
+    {
+        MaterializedResult materializedResult = computeActual("SELECT u FROM ( SELECT if(rand() > 0.5, 0, 1) AS u ) WHERE u <> u");
+        assertEquals(materializedResult.getRowCount(), 0);
+
+        materializedResult = computeActual("SELECT u, v FROM ( SELECT if(rand() > 0.5, 0, 1) AS u, 4*4 as v ) WHERE u <> u and v > 10");
+        assertEquals(materializedResult.getRowCount(), 0);
+
+        materializedResult = computeActual("SELECT u, v, w FROM ( SELECT if(rand() > 0.5, 0, 1) AS u, 4*4 as v, 'abc' as w ) WHERE v > 10");
+        assertEquals(materializedResult.getRowCount(), 1);
+    }
+
+    @Test
+    public void testVarbinary()
+            throws Exception
+    {
+        assertQuery("SELECT LENGTH(x) FROM (SELECT from_base64('gw==') as x)", "SELECT 1");
+        assertQuery("SELECT LENGTH(from_base64('gw=='))", "SELECT 1");
+    }
+
+    @Test
     public void testRowFieldAccessor()
             throws Exception
     {
-        assertQuery("SELECT a.col0 FROM (VALUES (test_row(1, 2))) AS t (a)", "SELECT 1");
-        assertQuery("SELECT a.col0 FROM (VALUES (test_row(1.0, 2.0))) AS t (a)", "SELECT 1.0");
-        assertQuery("SELECT a.col0 FROM (VALUES (test_row(TRUE, FALSE))) AS t (a)", "SELECT TRUE");
-        assertQuery("SELECT a.col1 FROM (VALUES (test_row(1.0, 'kittens'))) AS t (a)", "SELECT 'kittens'");
+        assertQuery("SELECT a.col0 FROM (VALUES ROW (test_row(1, 2))) AS t (a)", "SELECT 1");
+        assertQuery("SELECT a.col0 FROM (VALUES ROW (test_row(1.0, 2.0))) AS t (a)", "SELECT 1.0");
+        assertQuery("SELECT a.col0 FROM (VALUES ROW (test_row(TRUE, FALSE))) AS t (a)", "SELECT TRUE");
+        assertQuery("SELECT a.col1 FROM (VALUES ROW (test_row(1.0, 'kittens'))) AS t (a)", "SELECT 'kittens'");
     }
 
     @Test
@@ -103,7 +129,7 @@ public abstract class AbstractTestQueries
         assertQuery("SELECT 1 FROM (VALUES (ARRAY[1])) AS t (a) CROSS JOIN UNNEST(a)", "SELECT 1");
         assertQuery("SELECT x[1] FROM UNNEST(ARRAY[ARRAY[2, 2, 3]]) t(x)", "SELECT 2");
         assertQuery("SELECT x[1][2] FROM UNNEST(ARRAY[ARRAY[ARRAY[2, 2, 3]]]) t(x)", "SELECT 2");
-        assertQuery("SELECT x[2] FROM UNNEST(ARRAY[MAP(1, 'hello', 2, 'hi')]) t(x)", "SELECT 'hi'");
+        assertQuery("SELECT x[2] FROM UNNEST(ARRAY[MAP(ARRAY[1,2], ARRAY['hello', 'hi'])]) t(x)", "SELECT 'hi'");
         assertQuery("SELECT * FROM UNNEST(ARRAY[1, 2, 3])", "SELECT * FROM VALUES (1), (2), (3)");
         assertQuery("SELECT a FROM UNNEST(ARRAY[1, 2, 3]) t(a)", "SELECT * FROM VALUES (1), (2), (3)");
         assertQuery("SELECT a, b FROM UNNEST(ARRAY[1, 2], ARRAY[3, 4]) t(a, b)", "SELECT * FROM VALUES (1, 3), (2, 4)");
@@ -124,8 +150,8 @@ public abstract class AbstractTestQueries
                 "SELECT * FROM VALUES (0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1), (1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)");
         assertQuery("SELECT * FROM UNNEST(ARRAY[0, 1]), UNNEST(ARRAY[0, 1]), UNNEST(ARRAY[0, 1])",
                 "SELECT * FROM VALUES (0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1), (1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)");
-        assertQuery("SELECT a, b FROM UNNEST(MAP(1, 'cat', 2, 'dog')) t(a, b)", "SELECT * FROM VALUES (1, 'cat'), (2, 'dog')");
-        assertQuery("SELECT a, b FROM UNNEST(MAP(1, 'cat', 2, NULL)) t(a, b)", "SELECT * FROM VALUES (1, 'cat'), (2, NULL)");
+        assertQuery("SELECT a, b FROM UNNEST(MAP(ARRAY[1,2], ARRAY['cat', 'dog'])) t(a, b)", "SELECT * FROM VALUES (1, 'cat'), (2, 'dog')");
+        assertQuery("SELECT a, b FROM UNNEST(MAP(ARRAY[1,2], ARRAY['cat', NULL])) t(a, b)", "SELECT * FROM VALUES (1, 'cat'), (2, NULL)");
     }
 
     @Test
@@ -141,9 +167,17 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testMaps()
+            throws Exception
+    {
+        assertQuery("SELECT m[max_key] FROM (SELECT map_agg(orderkey, orderkey) m, max(orderkey) max_key FROM orders)", "SELECT max(orderkey) FROM orders");
+    }
+
+    @Test
     public void testValues()
             throws Exception
     {
+        assertQuery("VALUES 1, 2, 3, 4");
         assertQuery("VALUES (1.1, 2, 'foo'), (sin(3.3), 2+2, 'bar')");
         assertQuery("VALUES (1.1, 2), (sin(3.3), 2+2) ORDER BY 1", "VALUES (sin(3.3), 2+2), (1.1, 2)");
         assertQuery("VALUES (1.1, 2), (sin(3.3), 2+2) LIMIT 1", "VALUES (1.1, 2)");
@@ -269,7 +303,20 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT approx_distinct(custkey) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT)
-                .row(971)
+                .row(996)
+                .build();
+
+        assertEqualsIgnoreOrder(actual.getMaterializedRows(), expected.getMaterializedRows());
+    }
+
+    @Test
+    public void testApproximateCountDistinctWithStandardError()
+            throws Exception
+    {
+        MaterializedResult actual = computeActual("SELECT approx_distinct(custkey, 0.023) FROM orders");
+
+        MaterializedResult expected = resultBuilder(getSession(), BIGINT)
+                .row(996)
                 .build();
 
         assertEqualsIgnoreOrder(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -281,9 +328,23 @@ public abstract class AbstractTestQueries
     {
         MaterializedResult actual = computeActual("SELECT orderstatus, approx_distinct(custkey) FROM orders GROUP BY orderstatus");
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 969)
-                .row("F", 964)
-                .row("P", 301)
+                .row("O", 995)
+                .row("F", 993)
+                .row("P", 303)
+                .build();
+
+        assertEqualsIgnoreOrder(actual.getMaterializedRows(), expected.getMaterializedRows());
+    }
+
+    @Test
+    public void testApproximateCountDistinctGroupByWithStandardError()
+            throws Exception
+    {
+        MaterializedResult actual = computeActual("SELECT orderstatus, approx_distinct(custkey, 0.023) FROM orders GROUP BY orderstatus");
+        MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
+                .row("O", 995)
+                .row("F", 993)
+                .row("P", 303)
                 .build();
 
         assertEqualsIgnoreOrder(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -391,7 +452,7 @@ public abstract class AbstractTestQueries
     public void testDistinctGroupBy()
             throws Exception
     {
-        assertQuery("SELECT COUNT(DISTINCT clerk) as count, orderdate FROM orders GROUP BY orderdate ORDER BY count");
+        assertQuery("SELECT COUNT(DISTINCT clerk) as count, orderdate FROM orders GROUP BY orderdate ORDER BY count, orderdate");
     }
 
     @Test
@@ -520,6 +581,13 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testOrderByLimitZero()
+            throws Exception
+    {
+        assertQuery("SELECT custkey, totalprice FROM orders ORDER BY orderkey LIMIT 0");
+    }
+
+    @Test
     public void testRepeatedAggregations()
             throws Exception
     {
@@ -531,6 +599,15 @@ public abstract class AbstractTestQueries
             throws Exception
     {
         assertQuery("SELECT orderkey a, orderkey b FROM ORDERS WHERE orderstatus = 'F'");
+    }
+
+    @Test
+    public void testRepeatedOutputs2()
+            throws Exception
+    {
+        // this test exposed a bug that wasn't caught by other tests that resulted in the execution engine
+        // trying to read orderkey as the second field, causing a type mismatch
+        assertQuery("SELECT orderdate, orderdate, orderkey FROM orders");
     }
 
     @Test
@@ -711,6 +788,20 @@ public abstract class AbstractTestQueries
             throws Exception
     {
         assertQuery("SELECT COUNT(*) FROM ORDERS WHERE orderstatus = 'F'");
+    }
+
+    @Test
+    public void testGroupByArray()
+            throws Exception
+    {
+        assertQuery("SELECT col[1], count FROM (SELECT ARRAY[custkey] col, COUNT(*) count FROM ORDERS GROUP BY 1 ORDER BY 1)", "SELECT custkey, COUNT(*) FROM orders GROUP BY custkey ORDER BY custkey");
+    }
+
+    @Test
+    public void testGroupByRow()
+            throws Exception
+    {
+        assertQuery("SELECT col.col1, count FROM (SELECT test_row(custkey, custkey) col, COUNT(*) count FROM ORDERS GROUP BY 1)", "SELECT custkey, COUNT(*) FROM orders GROUP BY custkey");
     }
 
     @Test
@@ -897,6 +988,12 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testNestedGroupByWithSameKey()
+            throws Exception
+    {
+        assertQuery("SELECT custkey, sum(t) FROM (SELECT custkey, count(*) t FROM orders GROUP BY custkey) GROUP BY custkey");
+    }
+    @Test
     public void testGroupByWithNulls()
             throws Exception
     {
@@ -1060,6 +1157,31 @@ public abstract class AbstractTestQueries
                 "SELECT x + y FROM (" +
                         "   SELECT orderdate, COUNT(*) x FROM orders GROUP BY orderdate) a JOIN (" +
                         "   SELECT orderdate, COUNT(*) y FROM orders GROUP BY orderdate) b ON a.orderdate = b.orderdate");
+    }
+
+    @Test
+    public void testNonEqualityJoin()
+            throws Exception
+    {
+        assertQuery("SELECT COUNT(*) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.quantity > 2");
+        assertQuery("SELECT COUNT(*) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.quantity <= 2");
+        assertQuery("SELECT COUNT(*) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.quantity != 2");
+        assertQuery("SELECT COUNT(*) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.shipdate > orders.orderdate");
+        assertQuery("SELECT COUNT(*) FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey AND orders.orderdate < lineitem.shipdate");
+    }
+
+    @Test(expectedExceptions = RuntimeException.class, expectedExceptionsMessageRegExp = ".*Non-equi.*")
+    public void testNonEqualityLeftJoin()
+            throws Exception
+    {
+        assertQuery("SELECT COUNT(*) FROM lineitem LEFT OUTER JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.quantity > 2");
+    }
+
+    @Test(expectedExceptions = RuntimeException.class, expectedExceptionsMessageRegExp = ".*Non-equi.*")
+    public void testNonEqualityRightJoin()
+            throws Exception
+    {
+        assertQuery("SELECT COUNT(*) FROM lineitem RIGHT OUTER JOIN orders ON lineitem.orderkey = orders.orderkey AND lineitem.quantity > 2");
     }
 
     @Test
@@ -1650,6 +1772,13 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testMinBy()
+            throws Exception
+    {
+        assertQuery("SELECT MIN_BY(orderkey, totalprice) FROM orders", "SELECT orderkey FROM orders ORDER BY totalprice ASC LIMIT 1");
+    }
+
+    @Test
     public void testGroupByBetween()
             throws Exception
     {
@@ -1709,6 +1838,13 @@ public abstract class AbstractTestQueries
         assertQuery("SELECT custkey, sum(totalprice) * 2 FROM orders GROUP BY custkey");
         assertQuery("SELECT custkey, avg(totalprice + 5) FROM orders GROUP BY custkey");
         assertQuery("SELECT custkey, sum(totalprice) * 2 FROM orders GROUP BY custkey HAVING avg(totalprice + 5) > 10");
+    }
+
+    @Test
+    public void testHavingWithoutGroupBy()
+            throws Exception
+    {
+        assertQuery("SELECT sum(orderkey) FROM orders HAVING sum(orderkey) > 400000");
     }
 
     @Test
@@ -1830,6 +1966,29 @@ public abstract class AbstractTestQueries
     }
 
     @Test
+    public void testRowNumberNoOptimization()
+            throws Exception
+    {
+        MaterializedResult actual = computeActual("" +
+                "SELECT orderkey, orderstatus FROM (\n" +
+                "   SELECT row_number() OVER () rn, orderkey, orderstatus\n" +
+                "   FROM orders\n" +
+                ") WHERE NOT rn <= 10\n");
+        MaterializedResult all = computeExpected("SELECT orderkey, orderstatus FROM ORDERS", actual.getTypes());
+        assertEquals(actual.getMaterializedRows().size(), all.getMaterializedRows().size() - 10);
+        assertTrue(all.getMaterializedRows().containsAll(actual.getMaterializedRows()));
+
+        actual = computeActual("" +
+                "SELECT orderkey, orderstatus FROM (\n" +
+                "   SELECT row_number() OVER () rn, orderkey, orderstatus\n" +
+                "   FROM orders\n" +
+                ") WHERE rn - 5 <= 10\n");
+        all = computeExpected("SELECT orderkey, orderstatus FROM ORDERS", actual.getTypes());
+        assertEquals(actual.getMaterializedRows().size(), 15);
+        assertTrue(all.getMaterializedRows().containsAll(actual.getMaterializedRows()));
+    }
+
+    @Test
     public void testRowNumberUnpartitionedLimit()
             throws Exception
     {
@@ -1870,6 +2029,12 @@ public abstract class AbstractTestQueries
         // there are 3 distinct orderstatus, so expect 15 rows.
         assertEquals(actual.getMaterializedRows().size(), 15);
         assertTrue(all.getMaterializedRows().containsAll(actual.getMaterializedRows()));
+    }
+
+    @Test(timeOut = 60000)
+    public void testRowNumberWithLimit() throws Exception
+    {
+        assertQuery("SELECT row_number() over() as rn FROM lineitem JOIN orders ON lineitem.orderkey = orders.orderkey where orders.orderkey = 10000 limit 20");
     }
 
     @Test
@@ -2005,111 +2170,61 @@ public abstract class AbstractTestQueries
     }
 
     @Test
-    public void testWindowFirstValueFunction()
+    public void testValueWindowFunctions()
     {
-        MaterializedResult actual = computeActual("" +
-                "SELECT * FROM (\n" +
+        MaterializedResult actual = computeActual("SELECT * FROM (\n" +
                 "  SELECT orderkey, orderstatus\n" +
-                "    , first_value(orderkey + 1000) OVER (PARTITION BY orderstatus ORDER BY orderkey) as fvalue\n" +
+                "    , first_value(orderkey + 1000) OVER (PARTITION BY orderstatus ORDER BY orderkey) fvalue\n" +
+                "    , nth_value(orderkey + 1000, 2) OVER (PARTITION BY orderstatus ORDER BY orderkey\n" +
+                "        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) nvalue\n" +
+                "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
+                "  ) x\n" +
+                "ORDER BY orderkey LIMIT 5");
+
+        MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT, BIGINT)
+                .row(1, "O", 1001, 1002)
+                .row(2, "O", 1001, 1002)
+                .row(3, "F", 1003, 1005)
+                .row(4, "O", 1001, 1002)
+                .row(5, "F", 1003, 1005)
+                .build();
+
+        assertEquals(actual, expected);
+    }
+
+    @Test
+    public void testWindowFrames()
+    {
+        MaterializedResult actual = computeActual("SELECT * FROM (\n" +
+                "  SELECT orderkey, orderstatus\n" +
+                "    , sum(orderkey + 1000) OVER (PARTITION BY orderstatus ORDER BY orderkey\n" +
+                "        ROWS BETWEEN mod(custkey, 2) PRECEDING AND custkey / 500 FOLLOWING)\n" +
                 "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
                 "  ) x\n" +
                 "ORDER BY orderkey LIMIT 5");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT)
                 .row(1, "O", 1001)
-                .row(2, "O", 1001)
-                .row(3, "F", 1003)
-                .row(4, "O", 1001)
-                .row(5, "F", 1003)
+                .row(2, "O", 3007)
+                .row(3, "F", 3014)
+                .row(4, "O", 4045)
+                .row(5, "F", 2008)
                 .build();
 
         assertEquals(actual, expected);
     }
 
     @Test
-    public void testWindowLastValueFunction()
+    public void testWindowNoChannels()
     {
-        MaterializedResult actual = computeActual("" +
-                "SELECT * FROM (\n" +
-                "  SELECT orderkey, orderstatus\n" +
-                "    , last_value(orderkey + 1000) OVER (PARTITION BY orderstatus ORDER BY orderkey) as lvalue\n" +
-                "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
-                "  ) x\n" +
-                "ORDER BY orderkey LIMIT 5");
+        MaterializedResult actual = computeActual("SELECT rank() OVER ()\n" +
+                "FROM (SELECT * FROM orders LIMIT 10)\n" +
+                "LIMIT 3");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT)
-                .row(1, "O", 1034)
-                .row(2, "O", 1034)
-                .row(3, "F", 1033)
-                .row(4, "O", 1034)
-                .row(5, "F", 1033)
-                .build();
-
-        assertEquals(actual, expected);
-    }
-
-    @Test
-    public void testWindowNthValueFunction()
-    {
-        MaterializedResult actual = computeActual("" +
-                "SELECT * FROM (\n" +
-                "  SELECT orderkey, orderstatus\n" +
-                "    , nth_value(orderkey + 1000, 2) OVER (PARTITION BY orderstatus ORDER BY orderkey) as lvalue\n" +
-                "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
-                "  ) x\n" +
-                "ORDER BY orderkey LIMIT 5");
-
-        MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT)
-                .row(1, "O", 1002)
-                .row(2, "O", 1002)
-                .row(3, "F", 1005)
-                .row(4, "O", 1002)
-                .row(5, "F", 1005)
-                .build();
-
-        assertEquals(actual, expected);
-    }
-
-    @Test
-    public void testWindowLagValueFunction()
-    {
-        MaterializedResult actual = computeActual("" +
-                "SELECT * FROM (\n" +
-                "  SELECT orderkey, orderstatus\n" +
-                "    , lag(orderkey + 1000, 1, 0) OVER (PARTITION BY orderstatus ORDER BY orderkey) as lvalue\n" +
-                "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
-                "  ) x\n" +
-                "ORDER BY orderkey LIMIT 5");
-
-        MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT)
-                .row(1, "O", 0)
-                .row(2, "O", 1001)
-                .row(3, "F", 0)
-                .row(4, "O", 1002)
-                .row(5, "F", 1003)
-                .build();
-
-        assertEquals(actual, expected);
-    }
-
-    @Test
-    public void testWindowLeadValueFunction()
-    {
-        MaterializedResult actual = computeActual("" +
-                "SELECT * FROM (\n" +
-                "  SELECT orderkey, orderstatus\n" +
-                "    , lead(orderkey + 1000, 2, 0) OVER (PARTITION BY orderstatus ORDER BY orderkey) as lvalue\n" +
-                "    FROM (SELECT * FROM orders ORDER BY orderkey LIMIT 10) x\n" +
-                "  ) x\n" +
-                "ORDER BY orderkey LIMIT 6");
-
-        MaterializedResult expected = resultBuilder(getSession(), BIGINT, VARCHAR, BIGINT)
-                .row(1, "O", 1004)
-                .row(2, "O", 1007)
-                .row(3, "F", 1006)
-                .row(4, "O", 1032)
-                .row(5, "F", 1033)
-                .row(6, "F", 0)
+                .row(1)
+                .row(1)
+                .row(1)
                 .build();
 
         assertEquals(actual, expected);
@@ -2139,10 +2254,13 @@ public abstract class AbstractTestQueries
         assertQuery("SELECT try_cast(orderkey AS BOOLEAN) FROM orders", "SELECT CAST(orderkey AS BOOLEAN) FROM orders");
 
         assertQuery("SELECT try_cast('foo' AS BIGINT) FROM orders", "SELECT CAST(null AS BIGINT) FROM orders");
-        assertQuery("SELECT try_cast(orderdate AS BIGINT) FROM orders", "SELECT CAST(null AS BIGINT) FROM orders");
+        assertQuery("SELECT try_cast(clerk AS BIGINT) FROM orders", "SELECT CAST(null AS BIGINT) FROM orders");
+        assertQuery("SELECT try_cast(orderkey * orderkey AS VARCHAR) FROM orders", "SELECT CAST(orderkey * orderkey AS VARCHAR) FROM orders");
+        assertQuery("SELECT try_cast(try_cast(orderkey AS VARCHAR) AS BIGINT) FROM orders", "SELECT orderkey FROM orders");
+        assertQuery("SELECT try_cast(clerk AS VARCHAR) || try_cast(clerk AS VARCHAR) FROM orders", "SELECT clerk || clerk FROM orders");
 
         assertQuery("SELECT coalesce(try_cast('foo' AS BIGINT), 456) FROM orders", "SELECT 456 FROM orders");
-        assertQuery("SELECT coalesce(try_cast(orderdate AS BIGINT), 456) FROM orders", "SELECT 456 FROM orders");
+        assertQuery("SELECT coalesce(try_cast(clerk AS BIGINT), 456) FROM orders", "SELECT 456 FROM orders");
     }
 
     @Test
@@ -2599,7 +2717,7 @@ public abstract class AbstractTestQueries
                 .row("custkey", "bigint", true, false, "")
                 .row("orderstatus", "varchar", true, false, "")
                 .row("totalprice", "double", true, false, "")
-                .row("orderdate", "varchar", true, false, "")
+                .row("orderdate", "date", true, false, "")
                 .row("orderpriority", "varchar", true, false, "")
                 .row("clerk", "varchar", true, false, "")
                 .row("shippriority", "bigint", true, false, "")
@@ -2629,7 +2747,7 @@ public abstract class AbstractTestQueries
             @Override
             public String apply(MaterializedRow input)
             {
-                assertEquals(input.getFieldCount(), 5);
+                assertEquals(input.getFieldCount(), 6);
                 return (String) input.getField(0);
             }
         });
@@ -2645,9 +2763,11 @@ public abstract class AbstractTestQueries
 
         assertTrue(functions.containsKey("abs"), "Expected function names " + functions + " to contain 'abs'");
         assertEquals(functions.get("abs").asList().get(0).getField(3), "scalar");
+        assertEquals(functions.get("abs").asList().get(0).getField(4), true);
 
         assertTrue(functions.containsKey("rand"), "Expected function names " + functions + " to contain 'rand'");
-        assertEquals(functions.get("rand").asList().get(0).getField(3), "scalar (non-deterministic)");
+        assertEquals(functions.get("rand").asList().get(0).getField(3), "scalar");
+        assertEquals(functions.get("rand").asList().get(0).getField(4), false);
 
         assertTrue(functions.containsKey("rank"), "Expected function names " + functions + " to contain 'rank'");
         assertEquals(functions.get("rank").asList().get(0).getField(3), "window");
@@ -2679,6 +2799,19 @@ public abstract class AbstractTestQueries
                 " CAST(NULL AS BIGINT)\n" +
                 "FROM ORDERS\n" +
                 " ORDER BY 1\n");
+    }
+
+    @Test
+    public void testShowSession()
+            throws Exception
+    {
+        assertQueryOrdered(
+                getSession()
+                        .withCatalogProperty("connector", "cheese", "burger")
+                        .withSystemProperty("foo", "bar")
+                        .withSystemProperty("apple", "pie"),
+                "SHOW SESSION",
+                "SELECT * FROM VALUES ('apple', 'pie'), ('foo', 'bar'), ('connector.cheese', 'burger')");
     }
 
     @Test
@@ -2723,6 +2856,9 @@ public abstract class AbstractTestQueries
     {
         assertQuery("SELECT orderkey FROM orders UNION SELECT custkey FROM orders");
         assertQuery("SELECT 123 UNION DISTINCT SELECT 123 UNION ALL SELECT 123");
+
+        // mixed single-node vs fixed vs source-distributed
+        assertQuery("SELECT orderkey FROM orders UNION ALL SELECT 123 UNION ALL (SELECT custkey FROM orders GROUP BY custkey)");
     }
 
     @Test
@@ -2737,6 +2873,13 @@ public abstract class AbstractTestQueries
             throws Exception
     {
         assertQuery("SELECT orderkey FROM orders UNION ALL SELECT custkey FROM orders");
+    }
+
+    @Test
+    public void testUnionArray()
+            throws Exception
+    {
+        assertQuery("SELECT a[1] FROM (SELECT ARRAY[1] UNION ALL SELECT ARRAY[1]) t(a) LIMIT 1", "SELECT 1");
     }
 
     @Test
@@ -3346,6 +3489,12 @@ public abstract class AbstractTestQueries
         computeActual("SELECT 1 <> 'x'");
     }
 
+    @Test(expectedExceptions = RuntimeException.class, expectedExceptionsMessageRegExp = "\\QUnknown type: ARRAY<FOO>\\E")
+    public void testInvalidType()
+    {
+        computeActual("select cast(null as array<foo>)");
+    }
+
     @Test
     public void testTimeLiterals()
             throws Exception
@@ -3417,7 +3566,7 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT cardinality(approx_set(custkey)) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT)
-                .row(999)
+                .row(1002)
                 .build();
 
         assertEquals(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3430,7 +3579,7 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT cardinality(approx_set(CAST(custkey AS VARCHAR))) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT)
-                .row(1006)
+                .row(1024)
                 .build();
 
         assertEquals(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3459,8 +3608,8 @@ public abstract class AbstractTestQueries
                 "GROUP BY orderstatus");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 997)
-                .row("F", 995)
+                .row("O", 1001)
+                .row("F", 998)
                 .row("P", 304)
                 .build();
 
@@ -3477,9 +3626,9 @@ public abstract class AbstractTestQueries
                 "GROUP BY orderstatus");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 1004)
-                .row("F", 1002)
-                .row("P", 305)
+                .row("O", 1021)
+                .row("F", 1019)
+                .row("P", 304)
                 .build();
 
         assertEqualsIgnoreOrder(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3495,8 +3644,8 @@ public abstract class AbstractTestQueries
                 "GROUP BY orderstatus");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 1002)
-                .row("F", 1000)
+                .row("O", 1011)
+                .row("F", 1011)
                 .row("P", 304)
                 .build();
 
@@ -3510,7 +3659,7 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT cardinality(approx_set(IF(orderstatus = 'O', custkey))) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row(997)
+                .row(1001)
                 .build();
 
         assertEquals(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3540,7 +3689,7 @@ public abstract class AbstractTestQueries
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
                 .row("O", null)
-                .row("F", 995)
+                .row("F", 998)
                 .row("P", 304)
                 .build();
 
@@ -3557,8 +3706,8 @@ public abstract class AbstractTestQueries
                 "GROUP BY orderstatus");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 500)
-                .row("F", 497)
+                .row("O", 499)
+                .row("F", 496)
                 .row("P", 153)
                 .build();
 
@@ -3572,7 +3721,7 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT cardinality(merge(create_hll(custkey))) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT)
-                .row(999)
+                .row(1002)
                 .build();
 
         assertEquals(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3588,8 +3737,8 @@ public abstract class AbstractTestQueries
                 "GROUP BY orderstatus");
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
-                .row("O", 997)
-                .row("F", 995)
+                .row("O", 1001)
+                .row("F", 998)
                 .row("P", 304)
                 .build();
 
@@ -3603,7 +3752,7 @@ public abstract class AbstractTestQueries
         MaterializedResult actual = computeActual("SELECT cardinality(merge(create_hll(IF(orderstatus = 'O', custkey)))) FROM orders");
 
         MaterializedResult expected = resultBuilder(getSession(), BIGINT)
-                .row(997)
+                .row(1001)
                 .build();
 
         assertEquals(actual.getMaterializedRows(), expected.getMaterializedRows());
@@ -3620,7 +3769,7 @@ public abstract class AbstractTestQueries
 
         MaterializedResult expected = resultBuilder(getSession(), actual.getTypes())
                 .row("O", null)
-                .row("F", 995)
+                .row("F", 998)
                 .row("P", 304)
                 .build();
 

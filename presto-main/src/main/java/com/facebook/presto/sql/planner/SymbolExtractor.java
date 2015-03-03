@@ -26,10 +26,10 @@ import com.facebook.presto.sql.planner.plan.OutputNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.PlanVisitor;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
+import com.facebook.presto.sql.planner.plan.RemoteSourceNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SampleNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
-import com.facebook.presto.sql.planner.plan.SinkNode;
 import com.facebook.presto.sql.planner.plan.SortNode;
 import com.facebook.presto.sql.planner.plan.TableCommitNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
@@ -43,6 +43,7 @@ import com.facebook.presto.sql.planner.plan.WindowNode;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -72,7 +73,7 @@ public final class SymbolExtractor
         }
 
         @Override
-        public Void visitExchange(ExchangeNode node, Void context)
+        public Void visitRemoteSource(RemoteSourceNode node, Void context)
         {
             builder.addAll(node.getOutputSymbols());
 
@@ -208,6 +209,11 @@ public final class SymbolExtractor
         {
             node.getSource().accept(this, context);
 
+            Optional<Symbol> sampleWeightSymbol = node.getSampleWeightSymbol();
+            if (sampleWeightSymbol.isPresent()) {
+                builder.add(sampleWeightSymbol.get());
+            }
+
             return null;
         }
 
@@ -285,19 +291,20 @@ public final class SymbolExtractor
         }
 
         @Override
-        public Void visitSink(SinkNode node, Void context)
-        {
-            node.getSource().accept(this, context);
-
-            return null;
-        }
-
-        @Override
         public Void visitUnion(UnionNode node, Void context)
         {
             for (PlanNode subPlanNode : node.getSources()) {
                 subPlanNode.accept(this, context);
             }
+
+            builder.addAll(node.getOutputSymbols());
+            return null;
+        }
+
+        @Override
+        public Void visitExchange(ExchangeNode node, Void context)
+        {
+            builder.addAll(node.getOutputSymbols());
 
             return null;
         }

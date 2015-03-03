@@ -34,7 +34,6 @@ import com.google.common.collect.ImmutableList;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static com.facebook.presto.orc.Vector.MAX_VECTOR_LENGTH;
 import static com.facebook.presto.raptor.RaptorErrorCode.RAPTOR_ERROR;
@@ -46,12 +45,13 @@ import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.facebook.presto.spi.type.VarbinaryType.VARBINARY;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
-import static com.google.common.base.Objects.toStringHelper;
+import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static io.airlift.slice.Slices.wrappedBooleanArray;
 import static io.airlift.slice.Slices.wrappedDoubleArray;
+import static io.airlift.slice.Slices.wrappedIntArray;
 import static io.airlift.slice.Slices.wrappedLongArray;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -59,8 +59,6 @@ import static java.lang.Math.min;
 public class OrcPageSource
         implements ConnectorPageSource
 {
-    private static final long MILLIS_IN_DAY = TimeUnit.DAYS.toMillis(1);
-
     private final OrcRecordReader recordReader;
     private final OrcDataSource orcDataSource;
 
@@ -148,7 +146,7 @@ public class OrcPageSource
                     blocks[fieldId] = new LazyFixedWidthBlock(BOOLEAN.getFixedSize(), batchSize, new LazyBooleanBlockLoader(columnIndexes[fieldId], batchSize));
                 }
                 else if (DATE.equals(type)) {
-                    blocks[fieldId] = new LazyFixedWidthBlock(DATE.getFixedSize(), batchSize, new LazyDateBlockLoader(columnIndexes[fieldId], batchSize));
+                    blocks[fieldId] = new LazyFixedWidthBlock(DATE.getFixedSize(), batchSize, new LazyIntBlockLoader(columnIndexes[fieldId], batchSize));
                 }
                 else if (BIGINT.equals(type) || TIMESTAMP.equals(type)) {
                     blocks[fieldId] = new LazyFixedWidthBlock(((FixedWidthType) type).getFixedSize(), batchSize, new LazyLongBlockLoader(columnIndexes[fieldId], batchSize));
@@ -157,7 +155,7 @@ public class OrcPageSource
                     blocks[fieldId] = new LazyFixedWidthBlock(DOUBLE.getFixedSize(), batchSize, new LazyDoubleBlockLoader(columnIndexes[fieldId], batchSize));
                 }
                 else if (VARCHAR.equals(type) || VARBINARY.equals(type)) {
-                    blocks[fieldId] = new LazySliceArrayBlock(batchSize, new LazySliceBlockLoader(columnIndexes[fieldId]));
+                    blocks[fieldId] = new LazySliceArrayBlock(batchSize, new LazySliceBlockLoader(columnIndexes[fieldId], batchSize));
                 }
                 else {
                     throw new PrestoException(NOT_SUPPORTED, "Unsupported column type: " + type);
@@ -241,7 +239,7 @@ public class OrcPageSource
         {
             checkState(batchId == expectedBatchId);
             try {
-                BooleanVector vector = new BooleanVector();
+                BooleanVector vector = new BooleanVector(batchSize);
                 recordReader.readVector(columnIndex, vector);
                 block.setNullVector(vector.isNull);
                 block.setRawSlice(wrappedBooleanArray(vector.vector, 0, batchSize));
@@ -252,14 +250,14 @@ public class OrcPageSource
         }
     }
 
-    private final class LazyDateBlockLoader
+    private final class LazyIntBlockLoader
             implements LazyBlockLoader<LazyFixedWidthBlock>
     {
         private final int expectedBatchId = batchId;
         private final int batchSize;
         private final int columnIndex;
 
-        public LazyDateBlockLoader(int columnIndex, int batchSize)
+        public LazyIntBlockLoader(int columnIndex, int batchSize)
         {
             this.batchSize = batchSize;
             this.columnIndex = columnIndex;
@@ -270,13 +268,17 @@ public class OrcPageSource
         {
             checkState(batchId == expectedBatchId);
             try {
-                LongVector vector = new LongVector();
+                // TODO to add an ORC int vector
+                LongVector vector = new LongVector(batchSize);
                 recordReader.readVector(columnIndex, vector);
-                for (int i = 0; i < batchSize; i++) {
-                    vector.vector[i] *= MILLIS_IN_DAY;
-                }
                 block.setNullVector(vector.isNull);
-                block.setRawSlice(wrappedLongArray(vector.vector, 0, batchSize));
+
+                int[] ints = new int[batchSize];
+                for (int i = 0; i < batchSize; i++) {
+                    ints[i] = (int) vector.vector[i];
+                }
+
+                block.setRawSlice(wrappedIntArray(ints, 0, batchSize));
             }
             catch (IOException e) {
                 throw new PrestoException(RAPTOR_ERROR, e);
@@ -302,7 +304,7 @@ public class OrcPageSource
         {
             checkState(batchId == expectedBatchId);
             try {
-                LongVector vector = new LongVector();
+                LongVector vector = new LongVector(batchSize);
                 recordReader.readVector(columnIndex, vector);
                 block.setNullVector(vector.isNull);
                 block.setRawSlice(wrappedLongArray(vector.vector, 0, batchSize));
@@ -331,7 +333,7 @@ public class OrcPageSource
         {
             checkState(batchId == expectedBatchId);
             try {
-                DoubleVector vector = new DoubleVector();
+                DoubleVector vector = new DoubleVector(batchSize);
                 recordReader.readVector(columnIndex, vector);
                 block.setNullVector(vector.isNull);
                 block.setRawSlice(wrappedDoubleArray(vector.vector, 0, batchSize));
@@ -346,11 +348,13 @@ public class OrcPageSource
             implements LazyBlockLoader<LazySliceArrayBlock>
     {
         private final int expectedBatchId = batchId;
+        private final int batchSize;
         private final int columnIndex;
 
-        public LazySliceBlockLoader(int columnIndex)
+        public LazySliceBlockLoader(int columnIndex, int batchSize)
         {
             this.columnIndex = columnIndex;
+            this.batchSize = batchSize;
         }
 
         @Override
@@ -358,7 +362,7 @@ public class OrcPageSource
         {
             checkState(batchId == expectedBatchId);
             try {
-                SliceVector vector = new SliceVector();
+                SliceVector vector = new SliceVector(batchSize);
                 recordReader.readVector(columnIndex, vector);
                 block.setValues(vector.vector);
             }

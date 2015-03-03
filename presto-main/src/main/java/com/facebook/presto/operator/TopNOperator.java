@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.operator;
 
+import com.facebook.presto.ExceededMemoryLimitException;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.block.Block;
@@ -20,7 +21,6 @@ import com.facebook.presto.spi.block.SortOrder;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Ordering;
-import com.google.common.util.concurrent.ListenableFuture;
 import io.airlift.units.DataSize;
 
 import java.util.Iterator;
@@ -129,7 +129,7 @@ public class TopNOperator
         this.operatorContext = checkNotNull(operatorContext, "operatorContext is null");
         this.types = checkNotNull(types, "types is null");
 
-        checkArgument(n > 0, "n must be greater than zero");
+        checkArgument(n >= 0, "n must be positive");
         this.n = n;
 
         this.sortTypes = checkNotNull(sortTypes, "sortTypes is null");
@@ -141,6 +141,10 @@ public class TopNOperator
         this.memoryManager = new TopNMemoryManager(checkNotNull(operatorContext, "operatorContext is null"));
 
         this.pageBuilder = new PageBuilder(types);
+
+        if (n == 0) {
+            finishing = true;
+        }
     }
 
     @Override
@@ -165,12 +169,6 @@ public class TopNOperator
     public boolean isFinished()
     {
         return finishing && topNBuilder == null && (outputIterator == null || !outputIterator.hasNext());
-    }
-
-    @Override
-    public ListenableFuture<?> isBlocked()
-    {
-        return NOT_BLOCKED;
     }
 
     @Override
@@ -212,15 +210,19 @@ public class TopNOperator
             }
 
             // Only partial aggregation can flush early. Also, check that we are not flushing tiny bits at a time
-            checkState(finishing || partial, "Task exceeded max memory size of %s", memoryManager.getMaxMemorySize());
-
-            outputIterator = topNBuilder.build();
-            topNBuilder = null;
+            if (finishing || partial) {
+                outputIterator = topNBuilder.build();
+                topNBuilder = null;
+            }
+            else {
+                throw new ExceededMemoryLimitException(memoryManager.getMaxMemorySize());
+            }
         }
 
         pageBuilder.reset();
         while (!pageBuilder.isFull() && outputIterator.hasNext()) {
             Block[] next = outputIterator.next();
+            pageBuilder.declarePosition();
             for (int i = 0; i < next.length; i++) {
                 Type type = types.get(i);
                 type.appendTo(next[i], 0, pageBuilder.getBlockBuilder(i));

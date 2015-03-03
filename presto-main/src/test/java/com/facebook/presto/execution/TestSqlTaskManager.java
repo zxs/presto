@@ -17,6 +17,7 @@ import com.facebook.presto.ScheduledSplit;
 import com.facebook.presto.TaskSource;
 import com.facebook.presto.UnpartitionedPagePartitionFunction;
 import com.facebook.presto.event.query.QueryMonitor;
+import com.facebook.presto.metadata.NodeVersion;
 import com.facebook.presto.operator.ExchangeClient;
 import com.facebook.presto.spi.Node;
 import com.google.common.base.Supplier;
@@ -55,7 +56,7 @@ public class TestSqlTaskManager
 
     public TestSqlTaskManager()
     {
-        taskExecutor = new TaskExecutor(8);
+        taskExecutor = new TaskExecutor(8, 16);
         taskExecutor.start();
     }
 
@@ -163,6 +164,34 @@ public class TestSqlTaskManager
             TaskInfo taskInfo = sqlTaskManager.updateTask(TEST_SESSION,
                     taskId,
                     PLAN_FRAGMENT,
+                    ImmutableList.<TaskSource>of(),
+                    INITIAL_EMPTY_OUTPUT_BUFFERS);
+            assertEquals(taskInfo.getState(), TaskState.RUNNING);
+            assertNull(taskInfo.getStats().getEndTime());
+
+            taskInfo = sqlTaskManager.getTaskInfo(taskId);
+            assertEquals(taskInfo.getState(), TaskState.RUNNING);
+            assertNull(taskInfo.getStats().getEndTime());
+
+            taskInfo = sqlTaskManager.abortTask(taskId);
+            assertEquals(taskInfo.getState(), TaskState.ABORTED);
+            assertNotNull(taskInfo.getStats().getEndTime());
+
+            taskInfo = sqlTaskManager.getTaskInfo(taskId);
+            assertEquals(taskInfo.getState(), TaskState.ABORTED);
+            assertNotNull(taskInfo.getStats().getEndTime());
+        }
+    }
+
+    @Test
+    public void testAbortResults()
+            throws Exception
+    {
+        try (SqlTaskManager sqlTaskManager = createSqlTaskManager(new TaskManagerConfig())) {
+            TaskId taskId = TASK_ID;
+            TaskInfo taskInfo = sqlTaskManager.updateTask(TEST_SESSION,
+                    taskId,
+                    PLAN_FRAGMENT,
                     ImmutableList.of(new TaskSource(TABLE_SCAN_NODE_ID, ImmutableSet.of(SPLIT), true)),
                     INITIAL_EMPTY_OUTPUT_BUFFERS.withBuffer(OUT, new UnpartitionedPagePartitionFunction()).withNoMoreBufferIds());
             assertEquals(taskInfo.getState(), TaskState.RUNNING);
@@ -215,7 +244,8 @@ public class TestSqlTaskManager
                 createTestingPlanner(),
                 new MockLocationFactory(),
                 taskExecutor,
-                new QueryMonitor(new ObjectMapperProvider().get(), new NullEventClient(), new NodeInfo("test")),
+                new QueryMonitor(new ObjectMapperProvider().get(), new NullEventClient(), new NodeInfo("test"), new NodeVersion("testVersion")),
+                new NodeInfo("test"),
                 config);
     }
 

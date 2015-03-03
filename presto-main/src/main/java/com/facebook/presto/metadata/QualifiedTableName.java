@@ -17,11 +17,12 @@ import com.facebook.presto.spi.SchemaTableName;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.google.common.base.Function;
-import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 
 import javax.annotation.concurrent.Immutable;
+
+import java.util.Objects;
 
 import static com.facebook.presto.metadata.MetadataUtil.checkTableName;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -83,15 +84,15 @@ public class QualifiedTableName
             return false;
         }
         QualifiedTableName o = (QualifiedTableName) obj;
-        return Objects.equal(catalogName, o.catalogName) &&
-                Objects.equal(schemaName, o.schemaName) &&
-                Objects.equal(tableName, o.tableName);
+        return Objects.equals(catalogName, o.catalogName) &&
+                Objects.equals(schemaName, o.schemaName) &&
+                Objects.equals(tableName, o.tableName);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(catalogName, schemaName, tableName);
+        return Objects.hash(catalogName, schemaName, tableName);
     }
 
     @JsonValue
@@ -103,13 +104,6 @@ public class QualifiedTableName
 
     public static Function<SchemaTableName, QualifiedTableName> convertFromSchemaTableName(final String catalogName)
     {
-        return new Function<SchemaTableName, QualifiedTableName>()
-        {
-            @Override
-            public QualifiedTableName apply(SchemaTableName input)
-            {
-                return new QualifiedTableName(catalogName, input.getSchemaName(), input.getTableName());
-            }
-        };
+        return input -> new QualifiedTableName(catalogName, input.getSchemaName(), input.getTableName());
     }
 }

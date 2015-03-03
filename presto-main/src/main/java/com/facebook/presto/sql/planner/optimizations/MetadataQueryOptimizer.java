@@ -31,7 +31,6 @@ import com.facebook.presto.sql.planner.plan.FilterNode;
 import com.facebook.presto.sql.planner.plan.LimitNode;
 import com.facebook.presto.sql.planner.plan.MarkDistinctNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
-import com.facebook.presto.sql.planner.plan.PlanNodeRewriter;
 import com.facebook.presto.sql.planner.plan.PlanRewriter;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.SortNode;
@@ -40,7 +39,6 @@ import com.facebook.presto.sql.planner.plan.TopNNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.FunctionCall;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -48,6 +46,7 @@ import com.google.common.collect.Iterables;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -80,7 +79,7 @@ public class MetadataQueryOptimizer
     }
 
     private static class Optimizer
-            extends PlanNodeRewriter<Void>
+            extends PlanRewriter<Void>
     {
         private final PlanNodeIdAllocator idAllocator;
         private final Metadata metadata;
@@ -94,18 +93,18 @@ public class MetadataQueryOptimizer
         }
 
         @Override
-        public PlanNode rewriteAggregation(AggregationNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitAggregation(AggregationNode node, RewriteContext<Void> context)
         {
             // supported functions are only MIN/MAX/APPROX_DISTINCT or distinct aggregates
             for (FunctionCall call : node.getAggregations().values()) {
                 if (!ALLOWED_FUNCTIONS.contains(call.getName().toString()) && !call.isDistinct()) {
-                    return null;
+                    return context.defaultRewrite(node);
                 }
             }
 
             Optional<TableScanNode> result = findTableScan(node.getSource());
             if (!result.isPresent()) {
-                return null;
+                return context.defaultRewrite(node);
             }
 
             // verify all outputs of table scan are partition keys
@@ -122,7 +121,7 @@ public class MetadataQueryOptimizer
                 if (!columnMetadata.isPartitionKey()) {
                     // the optimization is only valid if the aggregation node only
                     // relies on partition keys
-                    return null;
+                    return context.defaultRewrite(node);
                 }
 
                 typesBuilder.put(symbol, columnMetadata.getType());
@@ -155,7 +154,7 @@ public class MetadataQueryOptimizer
                     SerializableNativeValue value = entries.get(column);
                     if (value == null) {
                         // partition key does not have a single value, so bail out to be safe
-                        return null;
+                        return context.defaultRewrite(node);
                     }
                     else {
                         rowBuilder.add(LiteralInterpreter.toExpression(value.getValue(), type));
@@ -183,8 +182,8 @@ public class MetadataQueryOptimizer
                 else if (source instanceof ProjectNode) {
                     // verify projections are deterministic
                     ProjectNode project = (ProjectNode) source;
-                    if (!Iterables.all(project.getExpressions(), DeterminismEvaluator.deterministic())) {
-                        return Optional.absent();
+                    if (!Iterables.all(project.getExpressions(), DeterminismEvaluator::isDeterministic)) {
+                        return Optional.empty();
                     }
                     source = project.getSource();
                 }
@@ -192,14 +191,14 @@ public class MetadataQueryOptimizer
                     return Optional.of((TableScanNode) source);
                 }
                 else {
-                    return Optional.absent();
+                    return Optional.empty();
                 }
             }
         }
     }
 
     private static class Replacer
-            extends PlanNodeRewriter<Void>
+            extends PlanRewriter<Void>
     {
         private final ValuesNode replacement;
 
@@ -209,7 +208,7 @@ public class MetadataQueryOptimizer
         }
 
         @Override
-        public PlanNode rewriteTableScan(TableScanNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitTableScan(TableScanNode node, RewriteContext<Void> context)
         {
             return replacement;
         }

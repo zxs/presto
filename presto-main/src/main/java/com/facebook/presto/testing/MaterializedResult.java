@@ -24,8 +24,10 @@ import com.facebook.presto.spi.type.SqlTimeWithTimeZone;
 import com.facebook.presto.spi.type.SqlTimestamp;
 import com.facebook.presto.spi.type.SqlTimestampWithTimeZone;
 import com.facebook.presto.spi.type.Type;
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import org.joda.time.DateTimeZone;
 
 import java.sql.Date;
 import java.sql.Time;
@@ -34,6 +36,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -46,11 +52,20 @@ public class MaterializedResult
 
     private final List<MaterializedRow> rows;
     private final List<Type> types;
+    private final Map<String, String> setSessionProperties;
+    private final Set<String> resetSessionProperties;
 
     public MaterializedResult(List<MaterializedRow> rows, List<? extends Type> types)
     {
+        this(rows, types, ImmutableMap.of(), ImmutableSet.of());
+    }
+
+    public MaterializedResult(List<MaterializedRow> rows, List<? extends Type> types, Map<String, String> setSessionProperties, Set<String> resetSessionProperties)
+    {
         this.rows = ImmutableList.copyOf(checkNotNull(rows, "rows is null"));
         this.types = ImmutableList.copyOf(checkNotNull(types, "types is null"));
+        this.setSessionProperties = ImmutableMap.copyOf(checkNotNull(setSessionProperties, "setSessionProperties is null"));
+        this.resetSessionProperties = ImmutableSet.copyOf(checkNotNull(resetSessionProperties, "resetSessionProperties is null"));
     }
 
     public int getRowCount()
@@ -74,6 +89,16 @@ public class MaterializedResult
         return types;
     }
 
+    public Map<String, String> getSetSessionProperties()
+    {
+        return setSessionProperties;
+    }
+
+    public Set<String> getResetSessionProperties()
+    {
+        return resetSessionProperties;
+    }
+
     @Override
     public boolean equals(Object obj)
     {
@@ -84,14 +109,16 @@ public class MaterializedResult
             return false;
         }
         MaterializedResult o = (MaterializedResult) obj;
-        return Objects.equal(types, o.types) &&
-                Objects.equal(rows, o.rows);
+        return Objects.equals(types, o.types) &&
+                Objects.equals(rows, o.rows) &&
+                Objects.equals(setSessionProperties, o.setSessionProperties) &&
+                Objects.equals(resetSessionProperties, o.resetSessionProperties);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(rows, types);
+        return Objects.hash(rows, types, setSessionProperties, resetSessionProperties);
     }
 
     @Override
@@ -100,6 +127,8 @@ public class MaterializedResult
         return toStringHelper(this)
                 .add("rows", rows)
                 .add("types", types)
+                .add("setSessionProperties", setSessionProperties)
+                .add("resetSessionProperties", resetSessionProperties)
                 .toString();
     }
 
@@ -109,7 +138,7 @@ public class MaterializedResult
         for (MaterializedRow row : rows) {
             jdbcRows.add(convertToJdbcTypes(row));
         }
-        return new MaterializedResult(jdbcRows.build(), types);
+        return new MaterializedResult(jdbcRows.build(), types, setSessionProperties, resetSessionProperties);
     }
 
     private static MaterializedRow convertToJdbcTypes(MaterializedRow prestoRow)
@@ -119,7 +148,8 @@ public class MaterializedResult
             Object prestoValue = prestoRow.getField(field);
             Object jdbcValue;
             if (prestoValue instanceof SqlDate) {
-                jdbcValue = new Date(((SqlDate) prestoValue).getMillisAtMidnight());
+                int days = ((SqlDate) prestoValue).getDays();
+                jdbcValue = new Date(TimeUnit.DAYS.toMillis(days));
             }
             else if (prestoValue instanceof SqlTime) {
                 jdbcValue = new Time(((SqlTime) prestoValue).getMillisUtc());
@@ -139,6 +169,30 @@ public class MaterializedResult
             jdbcValues.add(jdbcValue);
         }
         return new MaterializedRow(prestoRow.getPrecision(), jdbcValues);
+    }
+
+    public MaterializedResult toTimeZone(DateTimeZone oldTimeZone, DateTimeZone newTimeZone)
+    {
+        ImmutableList.Builder<MaterializedRow> jdbcRows = ImmutableList.builder();
+        for (MaterializedRow row : rows) {
+            jdbcRows.add(toTimeZone(row, oldTimeZone, newTimeZone));
+        }
+        return new MaterializedResult(jdbcRows.build(), types);
+    }
+
+    private static MaterializedRow toTimeZone(MaterializedRow prestoRow, DateTimeZone oldTimeZone, DateTimeZone newTimeZone)
+    {
+        List<Object> values = new ArrayList<>();
+        for (int field = 0; field < prestoRow.getFieldCount(); field++) {
+            Object value = prestoRow.getField(field);
+            if (value instanceof Date) {
+                long oldMillis = ((Date) value).getTime();
+                long newMillis = oldTimeZone.getMillisKeepLocal(newTimeZone, oldMillis);
+                value = new Date(newMillis);
+            }
+            values.add(value);
+        }
+        return new MaterializedRow(prestoRow.getPrecision(), values);
     }
 
     public static MaterializedResult materializeSourceDataStream(Session session, ConnectorPageSource pageSource, List<Type> types)
@@ -194,6 +248,14 @@ public class MaterializedResult
         public Builder row(Object... values)
         {
             rows.add(new MaterializedRow(DEFAULT_PRECISION, values));
+            return this;
+        }
+
+        public Builder rows(Object[][] rows)
+        {
+            for (Object[] row : rows) {
+                row(row);
+            }
             return this;
         }
 

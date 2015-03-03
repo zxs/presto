@@ -14,6 +14,7 @@
 package com.facebook.presto.operator.scalar;
 
 import com.facebook.presto.metadata.FunctionInfo;
+import com.facebook.presto.metadata.FunctionRegistry;
 import com.facebook.presto.metadata.ParametricScalar;
 import com.facebook.presto.metadata.Signature;
 import com.facebook.presto.spi.type.Type;
@@ -28,6 +29,7 @@ import io.airlift.slice.Slice;
 
 import java.lang.invoke.MethodHandle;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.facebook.presto.metadata.FunctionRegistry.mangleFieldAccessor;
 import static com.facebook.presto.operator.scalar.JsonExtract.BooleanJsonExtractor;
@@ -64,7 +66,7 @@ public class RowFieldAccessor
         Type returnType = null;
         int index = 0;
         for (RowField field : type.getFields()) {
-            if (field.getName().equals(fieldName)) {
+            if (field.getName().equals(Optional.of(fieldName))) {
                 returnType = field.getType();
                 break;
             }
@@ -123,7 +125,7 @@ public class RowFieldAccessor
     }
 
     @Override
-    public FunctionInfo specialize(Map<String, Type> types, int arity, TypeManager typeManager)
+    public FunctionInfo specialize(Map<String, Type> types, int arity, TypeManager typeManager, FunctionRegistry functionRegistry)
     {
         checkNotNull(methodHandle, "methodHandle is null");
         return new FunctionInfo(signature, getDescription(), isHidden(), methodHandle, isDeterministic(), true, ImmutableList.of(false));

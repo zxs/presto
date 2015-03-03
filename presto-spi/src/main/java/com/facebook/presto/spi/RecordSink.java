@@ -13,6 +13,12 @@
  */
 package com.facebook.presto.spi;
 
+import com.facebook.presto.spi.type.Type;
+import io.airlift.slice.Slice;
+
+import java.util.Collection;
+import java.util.List;
+
 public interface RecordSink
 {
     /**
@@ -33,5 +39,9 @@ public interface RecordSink
 
     void appendString(byte[] value);
 
-    String commit();
+    Collection<Slice> commit();
+
+    void rollback();
+
+    List<Type> getColumnTypes();
 }

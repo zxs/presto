@@ -37,7 +37,6 @@ import com.facebook.presto.type.TypeDeserializer;
 import com.facebook.presto.type.TypeRegistry;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -45,6 +44,7 @@ import com.google.common.collect.Maps;
 import io.airlift.json.JsonCodec;
 import io.airlift.json.JsonCodecFactory;
 import io.airlift.json.ObjectMapperProvider;
+import io.airlift.slice.Slice;
 
 import javax.inject.Inject;
 
@@ -55,11 +55,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.facebook.presto.metadata.ColumnHandle.fromConnectorHandle;
 import static com.facebook.presto.metadata.MetadataUtil.checkCatalogName;
 import static com.facebook.presto.metadata.QualifiedTableName.convertFromSchemaTableName;
 import static com.facebook.presto.metadata.ViewDefinition.ViewColumn;
@@ -204,7 +204,7 @@ public class MetadataManager
                 return Optional.of(new TableHandle(entry.getConnectorId(), tableHandle));
             }
         }
-        return Optional.absent();
+        return Optional.empty();
     }
 
     @Override
@@ -220,7 +220,7 @@ public class MetadataManager
     {
         Map<String, ConnectorColumnHandle> columns = lookupConnectorFor(tableHandle).getColumnHandles(tableHandle.getConnectorHandle());
 
-        return Maps.transformValues(columns, fromConnectorHandle(tableHandle.getConnectorId()));
+        return Maps.transformValues(columns, handle -> new ColumnHandle(tableHandle.getConnectorId(), handle));
     }
 
     @Override
@@ -237,7 +237,7 @@ public class MetadataManager
     {
         checkNotNull(prefix, "prefix is null");
 
-        String schemaNameOrNull = prefix.getSchemaName().orNull();
+        String schemaNameOrNull = prefix.getSchemaName().orElse(null);
         Set<QualifiedTableName> tables = new LinkedHashSet<>();
         for (ConnectorMetadataEntry entry : allConnectorsFor(prefix.getCatalogName())) {
             ConnectorSession connectorSession = session.toConnectorSession(entry.getCatalog());
@@ -255,7 +255,7 @@ public class MetadataManager
         ConnectorColumnHandle handle = lookupConnectorFor(tableHandle).getSampleWeightColumnHandle(tableHandle.getConnectorHandle());
 
         if (handle == null) {
-            return Optional.absent();
+            return Optional.empty();
         }
 
         return Optional.of(new ColumnHandle(tableHandle.getConnectorId(), handle));
@@ -351,7 +351,7 @@ public class MetadataManager
     }
 
     @Override
-    public void commitCreateTable(OutputTableHandle tableHandle, Collection<String> fragments)
+    public void commitCreateTable(OutputTableHandle tableHandle, Collection<Slice> fragments)
     {
         lookupConnectorFor(tableHandle).commitCreateTable(tableHandle.getConnectorHandle(), fragments);
     }
@@ -366,7 +366,7 @@ public class MetadataManager
     }
 
     @Override
-    public void commitInsert(InsertTableHandle tableHandle, Collection<String> fragments)
+    public void commitInsert(InsertTableHandle tableHandle, Collection<Slice> fragments)
     {
         lookupConnectorFor(tableHandle).commitInsert(tableHandle.getConnectorHandle(), fragments);
     }
@@ -386,7 +386,7 @@ public class MetadataManager
     {
         checkNotNull(prefix, "prefix is null");
 
-        String schemaNameOrNull = prefix.getSchemaName().orNull();
+        String schemaNameOrNull = prefix.getSchemaName().orElse(null);
         Set<QualifiedTableName> views = new LinkedHashSet<>();
         for (ConnectorMetadataEntry entry : allConnectorsFor(prefix.getCatalogName())) {
             ConnectorSession connectorSession = session.toConnectorSession(entry.getCatalog());
@@ -429,7 +429,7 @@ public class MetadataManager
                 return Optional.of(deserializeView(view));
             }
         }
-        return Optional.absent();
+        return Optional.empty();
     }
 
     @Override

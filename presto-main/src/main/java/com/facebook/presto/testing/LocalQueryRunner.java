@@ -51,7 +51,6 @@ import com.facebook.presto.operator.OutputFactory;
 import com.facebook.presto.operator.PageSourceOperator;
 import com.facebook.presto.operator.ProjectionFunction;
 import com.facebook.presto.operator.ProjectionFunctions;
-import com.facebook.presto.operator.RecordSinkManager;
 import com.facebook.presto.operator.TaskContext;
 import com.facebook.presto.operator.index.IndexJoinLookupStats;
 import com.facebook.presto.spi.ColumnMetadata;
@@ -60,10 +59,10 @@ import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.SystemTable;
-import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.split.PageSinkManager;
 import com.facebook.presto.split.PageSourceManager;
 import com.facebook.presto.split.SplitManager;
 import com.facebook.presto.split.SplitSource;
@@ -74,11 +73,11 @@ import com.facebook.presto.sql.analyzer.QueryExplainer;
 import com.facebook.presto.sql.gen.ExpressionCompiler;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.planner.CompilerConfig;
-import com.facebook.presto.sql.planner.DistributedLogicalPlanner;
 import com.facebook.presto.sql.planner.LocalExecutionPlanner;
 import com.facebook.presto.sql.planner.LocalExecutionPlanner.LocalExecutionPlan;
 import com.facebook.presto.sql.planner.LogicalPlanner;
 import com.facebook.presto.sql.planner.Plan;
+import com.facebook.presto.sql.planner.PlanFragmenter;
 import com.facebook.presto.sql.planner.PlanNodeIdAllocator;
 import com.facebook.presto.sql.planner.PlanOptimizersFactory;
 import com.facebook.presto.sql.planner.PlanPrinter;
@@ -90,7 +89,6 @@ import com.facebook.presto.sql.planner.plan.ValuesNode;
 import com.facebook.presto.sql.tree.Statement;
 import com.facebook.presto.type.TypeRegistry;
 import com.facebook.presto.type.TypeUtils;
-import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -102,6 +100,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -126,7 +125,7 @@ public class LocalQueryRunner
     private final SplitManager splitManager;
     private final PageSourceManager pageSourceManager;
     private final IndexManager indexManager;
-    private final RecordSinkManager recordSinkManager;
+    private final PageSinkManager pageSinkManager;
 
     private final ExpressionCompiler compiler;
     private final ConnectorManager connectorManager;
@@ -144,7 +143,7 @@ public class LocalQueryRunner
         this.nodeManager = new InMemoryNodeManager();
         this.typeRegistry = new TypeRegistry();
         this.indexManager = new IndexManager();
-        this.recordSinkManager = new RecordSinkManager();
+        this.pageSinkManager = new PageSinkManager();
 
         // sys schema
         SystemTablesMetadata systemTablesMetadata = new SystemTablesMetadata();
@@ -170,7 +169,7 @@ public class LocalQueryRunner
                 splitManager,
                 pageSourceManager,
                 indexManager,
-                recordSinkManager,
+                pageSinkManager,
                 new HandleResolver(),
                 ImmutableMap.<String, ConnectorFactory>of(),
                 nodeManager
@@ -312,8 +311,7 @@ public class LocalQueryRunner
     public boolean tableExists(Session session, String table)
     {
         QualifiedTableName name =  new QualifiedTableName(session.getCatalog(), session.getSchema(), table);
-        Optional<TableHandle> handle = getMetadata().getTableHandle(session, name);
-        return handle.isPresent();
+        return getMetadata().getTableHandle(session, name).isPresent();
     }
 
     @Override
@@ -361,9 +359,9 @@ public class LocalQueryRunner
                 .setExperimentalSyntaxEnabled(true)
                 .setDistributedIndexJoinsEnabled(false)
                 .setOptimizeHashGeneration(true);
-        PlanOptimizersFactory planOptimizersFactory = new PlanOptimizersFactory(metadata, sqlParser, splitManager, indexManager, featuresConfig);
+        PlanOptimizersFactory planOptimizersFactory = new PlanOptimizersFactory(metadata, sqlParser, splitManager, indexManager, featuresConfig, true);
 
-        QueryExplainer queryExplainer = new QueryExplainer(session, planOptimizersFactory.get(), metadata, sqlParser, featuresConfig.isExperimentalSyntaxEnabled(), featuresConfig.isDistributedIndexJoinsEnabled(), featuresConfig.isDistributedJoinsEnabled());
+        QueryExplainer queryExplainer = new QueryExplainer(session, planOptimizersFactory.get(), metadata, sqlParser, featuresConfig.isExperimentalSyntaxEnabled());
         Analyzer analyzer = new Analyzer(session, metadata, sqlParser, Optional.of(queryExplainer), featuresConfig.isExperimentalSyntaxEnabled());
 
         Analysis analysis = analyzer.analyze(statement);
@@ -373,7 +371,7 @@ public class LocalQueryRunner
             System.out.println(PlanPrinter.textLogicalPlan(plan.getRoot(), plan.getTypes(), metadata));
         }
 
-        SubPlan subplan = new DistributedLogicalPlanner(session, metadata, idAllocator).createSubPlans(plan, true, featuresConfig.isDistributedIndexJoinsEnabled(), featuresConfig.isDistributedJoinsEnabled());
+        SubPlan subplan = new PlanFragmenter().createSubPlans(plan);
         if (!subplan.getChildren().isEmpty()) {
             throw new AssertionError("Expected subplan to have no children");
         }
@@ -383,7 +381,7 @@ public class LocalQueryRunner
                 sqlParser,
                 pageSourceManager,
                 indexManager,
-                recordSinkManager,
+                pageSinkManager,
                 null,
                 compiler,
                 new IndexJoinLookupStats(),
@@ -394,6 +392,7 @@ public class LocalQueryRunner
         // plan query
         LocalExecutionPlan localExecutionPlan = executionPlanner.plan(session,
                 subplan.getFragment().getRoot(),
+                subplan.getFragment().getOutputLayout(),
                 plan.getTypes(),
                 outputFactory);
 
@@ -455,7 +454,7 @@ public class LocalQueryRunner
         }
 
         // Otherwise return all partitions
-        PartitionResult matchingPartitions = splitManager.getPartitions(node.getTable(), Optional.<TupleDomain<ColumnHandle>>absent());
+        PartitionResult matchingPartitions = splitManager.getPartitions(node.getTable(), Optional.empty());
         return matchingPartitions.getPartitions();
     }
 
@@ -471,7 +470,7 @@ public class LocalQueryRunner
             String... columnNames)
     {
         // look up the table
-        TableHandle tableHandle = metadata.getTableHandle(session, new QualifiedTableName(session.getCatalog(), session.getSchema(), tableName)).orNull();
+        TableHandle tableHandle = metadata.getTableHandle(session, new QualifiedTableName(session.getCatalog(), session.getSchema(), tableName)).orElse(null);
         checkArgument(tableHandle != null, "Table %s does not exist", tableName);
 
         // lookup the columns
@@ -530,7 +529,7 @@ public class LocalQueryRunner
     private Split getLocalQuerySplit(TableHandle tableHandle)
     {
         try {
-            List<Partition> partitions = splitManager.getPartitions(tableHandle, Optional.<TupleDomain<ColumnHandle>>absent()).getPartitions();
+            List<Partition> partitions = splitManager.getPartitions(tableHandle, Optional.empty()).getPartitions();
             SplitSource splitSource = splitManager.getPartitionSplits(tableHandle, partitions);
             Split split = Iterables.getOnlyElement(splitSource.getNextBatch(1000));
             while (!splitSource.isFinished()) {

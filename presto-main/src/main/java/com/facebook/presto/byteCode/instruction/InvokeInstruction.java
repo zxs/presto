@@ -18,6 +18,7 @@ import com.facebook.presto.byteCode.ByteCodeVisitor;
 import com.facebook.presto.byteCode.MethodDefinition;
 import com.facebook.presto.byteCode.OpCode;
 import com.facebook.presto.byteCode.ParameterizedType;
+import com.google.common.base.CharMatcher;
 import com.google.common.collect.ImmutableList;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
@@ -34,8 +35,9 @@ import static com.facebook.presto.byteCode.OpCode.INVOKEINTERFACE;
 import static com.facebook.presto.byteCode.OpCode.INVOKESPECIAL;
 import static com.facebook.presto.byteCode.OpCode.INVOKESTATIC;
 import static com.facebook.presto.byteCode.OpCode.INVOKEVIRTUAL;
-import static com.facebook.presto.byteCode.ParameterizedType.toParameterizedType;
 import static com.facebook.presto.byteCode.ParameterizedType.type;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.transform;
 
 public class InvokeInstruction
@@ -154,12 +156,12 @@ public class InvokeInstruction
 
     public static InstructionNode invokeConstructor(Class<?> target, Class<?>... parameterTypes)
     {
-        return invokeConstructor(type(target), transform(ImmutableList.copyOf(parameterTypes), toParameterizedType()));
+        return invokeConstructor(type(target), transform(ImmutableList.copyOf(parameterTypes), ParameterizedType::type));
     }
 
     public static InstructionNode invokeConstructor(Class<?> target, Iterable<Class<?>> parameterTypes)
     {
-        return invokeConstructor(type(target), transform(parameterTypes, toParameterizedType()));
+        return invokeConstructor(type(target), transform(parameterTypes, ParameterizedType::type));
     }
 
     public static InstructionNode invokeConstructor(ParameterizedType target, ParameterizedType... parameterTypes)
@@ -216,7 +218,7 @@ public class InvokeInstruction
                 type(method.getDeclaringClass()),
                 method.getName(),
                 type(method.getReturnType()),
-                transform(ImmutableList.copyOf(method.getParameterTypes()), toParameterizedType()));
+                transform(ImmutableList.copyOf(method.getParameterTypes()), ParameterizedType::type));
     }
 
     private static InstructionNode invoke(OpCode invocationType, MethodDefinition method)
@@ -243,7 +245,7 @@ public class InvokeInstruction
                 type(target),
                 name,
                 type(returnType),
-                transform(parameterTypes, toParameterizedType()));
+                transform(parameterTypes, ParameterizedType::type));
     }
 
     //
@@ -283,7 +285,7 @@ public class InvokeInstruction
     {
         return new InvokeDynamicInstruction(name,
                 type(methodType.returnType()),
-                transform(methodType.parameterList(), toParameterizedType()),
+                transform(methodType.parameterList(), ParameterizedType::type),
                 bootstrapMethod,
                 ImmutableList.copyOf(bootstrapArguments));
     }
@@ -295,7 +297,7 @@ public class InvokeInstruction
     {
         return new InvokeDynamicInstruction(name,
                 type(methodType.returnType()),
-                transform(methodType.parameterList(), toParameterizedType()),
+                transform(methodType.parameterList(), ParameterizedType::type),
                 bootstrapMethod,
                 ImmutableList.copyOf(bootstrapArguments));
     }
@@ -312,6 +314,7 @@ public class InvokeInstruction
             ParameterizedType returnType,
             Iterable<ParameterizedType> parameterTypes)
     {
+        checkUnqualifiedName(name);
         this.opCode = opCode;
         this.target = target;
         this.name = name;
@@ -421,5 +424,17 @@ public class InvokeInstruction
         {
             return visitor.visitInvokeDynamic(parent, this);
         }
+    }
+
+    private static void checkUnqualifiedName(String name)
+    {
+        // JVM Specification 4.2.2 Unqualified Names
+        checkNotNull(name, "name is null");
+        checkArgument(!name.isEmpty(), "name is empty");
+        if (name.equals("<init>") || name.equals("<clinit>")) {
+            return;
+        }
+        CharMatcher invalid = CharMatcher.anyOf(".;[/<>");
+        checkArgument(invalid.matchesNoneOf(name), "invalid name: %s", name);
     }
 }

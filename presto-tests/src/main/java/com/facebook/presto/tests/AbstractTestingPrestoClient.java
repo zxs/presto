@@ -59,7 +59,7 @@ public abstract class AbstractTestingPrestoClient<T>
         this.httpClient = new JettyHttpClient(
                 new HttpClientConfig()
                         .setConnectTimeout(new Duration(1, TimeUnit.DAYS))
-                        .setReadTimeout(new Duration(10, TimeUnit.DAYS)));
+                        .setIdleTimeout(new Duration(10, TimeUnit.DAYS)));
     }
 
     @Override
@@ -88,7 +88,7 @@ public abstract class AbstractTestingPrestoClient<T>
             }
 
             if (!client.isFailed()) {
-                return resultsSession.build();
+                return resultsSession.build(client.getSetSessionProperties(), client.getResetSessionProperties());
             }
 
             QueryError error = client.finalResults().getError();

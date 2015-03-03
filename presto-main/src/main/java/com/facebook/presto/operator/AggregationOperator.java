@@ -17,14 +17,15 @@ import com.facebook.presto.ExceededMemoryLimitException;
 import com.facebook.presto.operator.aggregation.Accumulator;
 import com.facebook.presto.operator.aggregation.AccumulatorFactory;
 import com.facebook.presto.spi.Page;
-import com.facebook.presto.spi.block.Block;
+import com.facebook.presto.spi.PageBuilder;
+import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.planner.plan.AggregationNode.Step;
 import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.List;
 
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -131,12 +132,6 @@ public class AggregationOperator
     }
 
     @Override
-    public ListenableFuture<?> isBlocked()
-    {
-        return NOT_BLOCKED;
-    }
-
-    @Override
     public boolean needsInput()
     {
         return state == State.NEEDS_INPUT;
@@ -161,12 +156,19 @@ public class AggregationOperator
         }
 
         // project results into output blocks
-        Block[] blocks = new Block[aggregates.size()];
-        for (int i = 0; i < blocks.length; i++) {
-            blocks[i] = aggregates.get(i).evaluate();
+        List<Type> types = aggregates.stream().map(Aggregator::getType).collect(toImmutableList());
+
+        PageBuilder pageBuilder = new PageBuilder(types);
+
+        pageBuilder.declarePosition();
+        for (int i = 0; i < aggregates.size(); i++) {
+            Aggregator aggregator = aggregates.get(i);
+            BlockBuilder blockBuilder = pageBuilder.getBlockBuilder(i);
+            aggregator.evaluate(blockBuilder);
         }
+
         state = State.FINISHED;
-        return new Page(blocks);
+        return pageBuilder.build();
     }
 
     private static List<Type> toTypes(Step step, List<AccumulatorFactory> accumulatorFactories)
@@ -223,13 +225,13 @@ public class AggregationOperator
             }
         }
 
-        public Block evaluate()
+        public void evaluate(BlockBuilder blockBuilder)
         {
             if (step == Step.PARTIAL) {
-                return aggregation.evaluateIntermediate();
+                aggregation.evaluateIntermediate(blockBuilder);
             }
             else {
-                return aggregation.evaluateFinal();
+                aggregation.evaluateFinal(blockBuilder);
             }
         }
     }

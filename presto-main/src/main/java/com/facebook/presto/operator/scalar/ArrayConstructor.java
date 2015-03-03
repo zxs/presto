@@ -20,21 +20,18 @@ import com.facebook.presto.byteCode.DynamicClassLoader;
 import com.facebook.presto.byteCode.NamedParameterDefinition;
 import com.facebook.presto.byteCode.Variable;
 import com.facebook.presto.metadata.FunctionInfo;
+import com.facebook.presto.metadata.FunctionRegistry;
 import com.facebook.presto.metadata.ParametricScalar;
 import com.facebook.presto.metadata.Signature;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
-import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.sql.gen.ByteCodeUtils;
 import com.facebook.presto.sql.gen.CompilerUtils;
 import com.facebook.presto.type.ArrayType;
 import com.facebook.presto.type.MapType;
 import com.facebook.presto.type.RowType;
-import com.facebook.presto.type.UnknownType;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Primitives;
 import io.airlift.slice.Slice;
@@ -54,11 +51,10 @@ import static com.facebook.presto.byteCode.Access.a;
 import static com.facebook.presto.byteCode.NamedParameterDefinition.arg;
 import static com.facebook.presto.byteCode.ParameterizedType.type;
 import static com.facebook.presto.metadata.Signature.typeParameter;
-import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.sql.gen.CompilerUtils.defineClass;
 import static com.facebook.presto.sql.relational.Signatures.arrayConstructorSignature;
 import static com.facebook.presto.type.TypeUtils.parameterizedTypeName;
-import static com.facebook.presto.util.Reflection.methodHandle;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.invoke.MethodHandles.lookup;
 
@@ -66,8 +62,7 @@ public final class ArrayConstructor
         extends ParametricScalar
 {
     public static final ArrayConstructor ARRAY_CONSTRUCTOR = new ArrayConstructor();
-    private static final Signature SIGNATURE = new Signature("array_constructor", ImmutableList.of(typeParameter("E")), "array<E>", ImmutableList.of("E"), true, true);
-    private static final MethodHandle EMPTY_ARRAY_CONSTRUCTOR = methodHandle(ArrayConstructor.class, "emptyArrayConstructor");
+    private static final Signature SIGNATURE = new Signature("array_constructor", ImmutableList.of(typeParameter("E")), "array<E>", ImmutableList.of("E", "E"), true, true);
 
     @Override
     public Signature getSignature()
@@ -95,13 +90,8 @@ public final class ArrayConstructor
     }
 
     @Override
-    public FunctionInfo specialize(Map<String, Type> types, int arity, TypeManager typeManager)
+    public FunctionInfo specialize(Map<String, Type> types, int arity, TypeManager typeManager, FunctionRegistry functionRegistry)
     {
-        // Check to see if we're creating an empty, un-specialized array
-        if (types.isEmpty()) {
-            return new FunctionInfo(arrayConstructorSignature(parameterizedTypeName("array", parseTypeSignature(UnknownType.NAME)), ImmutableList.<TypeSignature>of()), "", true, EMPTY_ARRAY_CONSTRUCTOR, true, false, ImmutableList.<Boolean>of());
-        }
-
         checkArgument(types.size() == 1, "Can only construct arrays from exactly matching types");
         ImmutableList.Builder<Class<?>> builder = ImmutableList.builder();
         Type type = types.get("E");
@@ -134,13 +124,10 @@ public final class ArrayConstructor
 
     private static Class<?> generateArrayConstructor(List<Class<?>> stackTypes, Type elementType)
     {
-        List<String> stackTypeNames = FluentIterable.from(stackTypes).transform(new Function<Class<?>, String>() {
-            @Override
-            public String apply(Class<?> input)
-            {
-                return input.getSimpleName();
-            }
-        }).toList();
+        List<String> stackTypeNames = stackTypes.stream()
+                .map(Class::getSimpleName)
+                .collect(toImmutableList());
+
         ClassDefinition definition = new ClassDefinition(
                 new CompilerContext(null),
                 a(PUBLIC, FINAL),

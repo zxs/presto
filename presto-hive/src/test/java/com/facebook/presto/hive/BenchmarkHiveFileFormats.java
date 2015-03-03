@@ -26,10 +26,11 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.type.TypeRegistry;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import io.airlift.tpch.LineItem;
 import io.airlift.tpch.LineItemColumn;
 import io.airlift.tpch.LineItemGenerator;
@@ -46,7 +47,6 @@ import org.apache.hadoop.hive.ql.io.RCFileOutputFormat;
 import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
 import org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe;
-import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.hive.serde2.ReaderWriterProfiler;
 import org.apache.hadoop.hive.serde2.SerDe;
 import org.apache.hadoop.hive.serde2.Serializer;
@@ -72,8 +72,8 @@ import java.io.PrintStream;
 import java.util.List;
 import java.util.Properties;
 
-import static com.facebook.presto.hive.HiveClient.getType;
-import static com.facebook.presto.hive.HiveColumnHandle.hiveColumnIndexGetter;
+import static com.facebook.presto.hive.HiveType.getType;
+import static com.facebook.presto.hive.HiveUtil.setReadColumns;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.spi.type.TimeZoneKey.UTC_KEY;
@@ -91,10 +91,10 @@ import static io.airlift.tpch.LineItemColumn.STATUS;
 import static io.airlift.tpch.LineItemColumn.TAX;
 import static java.util.Locale.ENGLISH;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.FILE_INPUT_FORMAT;
 import static org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_LIB;
 import static org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory.getStandardStructObjectInspector;
+import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory.javaDateObjectInspector;
 import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory.javaDoubleObjectInspector;
 import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory.javaLongObjectInspector;
 import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory.javaStringObjectInspector;
@@ -107,14 +107,14 @@ public final class BenchmarkHiveFileFormats
     private static final ConnectorSession SESSION = new ConnectorSession("user", UTC_KEY, ENGLISH, System.currentTimeMillis(), null);
 
     private static final List<CompressionType> ENABLED_COMPRESSION = ImmutableList.<CompressionType>builder()
-            .add(CompressionType.uncompressed)
+            .add(CompressionType.none)
             .add(CompressionType.snappy)
             .add(CompressionType.gzip)
             .build();
 
     private enum CompressionType
     {
-        uncompressed(""),
+        none(""),
         snappy(".snappy"),
         gzip(".gz");
 
@@ -135,23 +135,24 @@ public final class BenchmarkHiveFileFormats
     private static final JobConf JOB_CONF = new JobConf();
     private static final ImmutableList<? extends TpchColumn<?>> COLUMNS = ImmutableList.copyOf(LineItemColumn.values());
 
+    private static final long FILTER_ORDER_KEY_ID = 300_000L;
     private static final List<HiveColumnHandle> BIGINT_COLUMN = getHiveColumnHandles(ORDER_KEY);
-    private static final List<Integer> BIGINT_COLUMN_INDEX = ImmutableList.copyOf(transform(BIGINT_COLUMN, hiveColumnIndexGetter()));
+    private static final List<Integer> BIGINT_COLUMN_INDEX = ImmutableList.copyOf(transform(BIGINT_COLUMN, HiveColumnHandle::getHiveColumnIndex));
 
     private static final List<HiveColumnHandle> DOUBLE_COLUMN = getHiveColumnHandles(EXTENDED_PRICE);
-    private static final List<Integer> DOUBLE_COLUMN_INDEX = ImmutableList.copyOf(transform(DOUBLE_COLUMN, hiveColumnIndexGetter()));
+    private static final List<Integer> DOUBLE_COLUMN_INDEX = ImmutableList.copyOf(transform(DOUBLE_COLUMN, HiveColumnHandle::getHiveColumnIndex));
 
     private static final List<HiveColumnHandle> VARCHAR_COLUMN = getHiveColumnHandles(SHIP_INSTRUCTIONS);
-    private static final List<Integer> VARCHAR_COLUMN_INDEX = ImmutableList.copyOf(transform(VARCHAR_COLUMN, hiveColumnIndexGetter()));
+    private static final List<Integer> VARCHAR_COLUMN_INDEX = ImmutableList.copyOf(transform(VARCHAR_COLUMN, HiveColumnHandle::getHiveColumnIndex));
 
     private static final List<HiveColumnHandle> TPCH_6_COLUMNS = getHiveColumnHandles(QUANTITY, EXTENDED_PRICE, DISCOUNT, SHIP_DATE);
-    private static final List<Integer> TPCH_6_COLUMN_INDEXES = ImmutableList.copyOf(transform(TPCH_6_COLUMNS, hiveColumnIndexGetter()));
+    private static final List<Integer> TPCH_6_COLUMN_INDEXES = ImmutableList.copyOf(transform(TPCH_6_COLUMNS, HiveColumnHandle::getHiveColumnIndex));
 
     private static final List<HiveColumnHandle> TPCH_1_COLUMNS = getHiveColumnHandles(QUANTITY, EXTENDED_PRICE, DISCOUNT, TAX, RETURN_FLAG, STATUS, SHIP_DATE);
-    private static final List<Integer> TPCH_1_COLUMN_INDEXES = ImmutableList.copyOf(transform(TPCH_1_COLUMNS, hiveColumnIndexGetter()));
+    private static final List<Integer> TPCH_1_COLUMN_INDEXES = ImmutableList.copyOf(transform(TPCH_1_COLUMNS, HiveColumnHandle::getHiveColumnIndex));
 
     private static final List<HiveColumnHandle> ALL_COLUMNS = getHiveColumnHandles(LineItemColumn.values());
-    private static final List<Integer> ALL_COLUMN_INDEXES = ImmutableList.copyOf(transform(ALL_COLUMNS, hiveColumnIndexGetter()));
+    private static final List<Integer> ALL_COLUMN_INDEXES = ImmutableList.copyOf(transform(ALL_COLUMNS, HiveColumnHandle::getHiveColumnIndex));
 
     private static final int LOOPS = 1;
     private static final TypeRegistry TYPE_MANAGER = new TypeRegistry();
@@ -272,7 +273,7 @@ public final class BenchmarkHiveFileFormats
                             compressionType,
                             COLUMNS);
                 }
-                logDuration(benchmarkFile.getName(), compressionType, start, loopCount, dataSize);
+                logDuration("none", benchmarkFile.getName(), "write", compressionType, start, loopCount, dataSize);
             }
         }
         System.out.println();
@@ -283,9 +284,7 @@ public final class BenchmarkHiveFileFormats
     {
         long start;
 
-        System.out.println("none");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, BIGINT_COLUMN_INDEX);
+        setReadColumns(JOB_CONF, ImmutableList.<Integer>of());
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -298,7 +297,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("none", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -313,14 +312,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("none", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
 
-        System.out.println("bigint");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, ImmutableList.<Integer>of());
+        setReadColumns(JOB_CONF, ImmutableList.<Integer>of());
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -333,7 +330,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("bigint", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -348,15 +345,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("bigint", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
 
-        System.out.println();
-        System.out.println("double");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, DOUBLE_COLUMN_INDEX);
+        setReadColumns(JOB_CONF, DOUBLE_COLUMN_INDEX);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -369,7 +363,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("double", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -384,15 +378,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("double", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
-        System.out.println();
 
-        System.out.println("varchar");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, VARCHAR_COLUMN_INDEX);
+        setReadColumns(JOB_CONF, VARCHAR_COLUMN_INDEX);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -405,7 +396,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("varchar", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
             for (HivePageSourceFactory pageSourceFactory : benchmarkFile.getPageSourceFactory()) {
@@ -419,15 +410,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("varchar", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
-        System.out.println();
 
-        System.out.println("tpch6");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, TPCH_6_COLUMN_INDEXES);
+        setReadColumns(JOB_CONF, TPCH_6_COLUMN_INDEXES);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -440,7 +428,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("tpch6", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -455,15 +443,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("tpch6", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
-        System.out.println();
 
-        System.out.println("tpch1");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, TPCH_1_COLUMN_INDEXES);
+        setReadColumns(JOB_CONF, TPCH_1_COLUMN_INDEXES);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -476,7 +461,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("tpch1", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -491,15 +476,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("tpch1", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
-        System.out.println();
 
-        System.out.println("all");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, ALL_COLUMN_INDEXES);
+        setReadColumns(JOB_CONF, ALL_COLUMN_INDEXES);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -512,7 +494,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("all", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
 
@@ -527,15 +509,12 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("all", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
-        System.out.println();
 
-        System.out.println("one (load all)");
-        // noinspection deprecation
-        ColumnProjectionUtils.setReadColumnIDs(JOB_CONF, BIGINT_COLUMN_INDEX);
+        setReadColumns(JOB_CONF, ALL_COLUMN_INDEXES);
         for (BenchmarkFile benchmarkFile : benchmarkFiles) {
             for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
                 for (CompressionType compressionType : compressionTypes) {
@@ -548,7 +527,7 @@ public final class BenchmarkHiveFileFormats
                                 recordCursorProvider
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " " + getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                    logDuration("lazy", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
                 }
             }
             for (HivePageSourceFactory pageSourceFactory : benchmarkFile.getPageSourceFactory()) {
@@ -562,7 +541,41 @@ public final class BenchmarkHiveFileFormats
                                 pageSourceFactory
                         );
                     }
-                    logDuration(benchmarkFile.getName() + " page", compressionType, start, loopCount, result);
+                    logDuration("lazy", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
+                }
+            }
+        }
+
+        setReadColumns(JOB_CONF, ALL_COLUMN_INDEXES);
+        for (BenchmarkFile benchmarkFile : benchmarkFiles) {
+            for (HiveRecordCursorProvider recordCursorProvider : benchmarkFile.getRecordCursorProviders()) {
+                for (CompressionType compressionType : compressionTypes) {
+                    double result = 0;
+                    start = System.nanoTime();
+                    for (int loop = 0; loop < loopCount; loop++) {
+                        // cursor interface doesn't support predicate pushdown
+                        result = benchmarkReadAll(
+                                createFileSplit(benchmarkFile.getFile(compressionType)),
+                                createPartitionProperties(benchmarkFile),
+                                recordCursorProvider
+                        );
+                    }
+                    logDuration("pushdown", benchmarkFile.getName(), getCursorType(recordCursorProvider), compressionType, start, loopCount, result);
+                }
+            }
+
+            for (HivePageSourceFactory pageSourceFactory : benchmarkFile.getPageSourceFactory()) {
+                for (CompressionType compressionType : compressionTypes) {
+                    double result = 0;
+                    start = System.nanoTime();
+                    for (int loop = 0; loop < loopCount; loop++) {
+                        result = benchmarkPredicatePushDown(
+                                createFileSplit(benchmarkFile.getFile(compressionType)),
+                                createPartitionProperties(benchmarkFile),
+                                pageSourceFactory
+                        );
+                    }
+                    logDuration("pushdown", benchmarkFile.getName(), "page", compressionType, start, loopCount, result);
                 }
             }
         }
@@ -590,7 +603,7 @@ public final class BenchmarkHiveFileFormats
                     split.getStart(),
                     split.getLength(),
                     split.getSchema(),
-                    BIGINT_COLUMN,
+                    ImmutableList.<HiveColumnHandle>of(),
                     split.getPartitionKeys(),
                     TupleDomain.<HiveColumnHandle>all(),
                     DateTimeZone.UTC,
@@ -1351,12 +1364,204 @@ public final class BenchmarkHiveFileFormats
         return sum;
     }
 
+    private static double benchmarkPredicatePushDown(
+            FileSplit fileSplit,
+            Properties partitionProperties,
+            HiveRecordCursorProvider hiveRecordCursorProvider)
+            throws IOException
+    {
+        HiveSplit split = createHiveSplit(fileSplit, partitionProperties);
+
+        double sum = 0;
+        for (int i = 0; i < LOOPS; i++) {
+            sum = 0;
+
+            HiveRecordCursor recordCursor = hiveRecordCursorProvider.createHiveRecordCursor(
+                    split.getClientId(),
+                    new Configuration(),
+                    split.getSession(),
+                    new Path(split.getPath()),
+                    split.getStart(),
+                    split.getLength(),
+                    split.getSchema(),
+                    ALL_COLUMNS,
+                    split.getPartitionKeys(),
+                    TupleDomain.<HiveColumnHandle>all(),
+                    DateTimeZone.UTC,
+                    TYPE_MANAGER).get();
+
+            while (recordCursor.advanceNextPosition()) {
+                if (!recordCursor.isNull(0)) {
+                    long orderKey = recordCursor.getLong(0);
+                    if (orderKey != FILTER_ORDER_KEY_ID) {
+                        continue;
+                    }
+                    sum += orderKey;
+                }
+                if (!recordCursor.isNull(1)) {
+                    sum += recordCursor.getLong(1);
+                }
+                if (!recordCursor.isNull(2)) {
+                    sum += recordCursor.getLong(2);
+                }
+                if (!recordCursor.isNull(3)) {
+                    sum += recordCursor.getLong(3);
+                }
+                if (!recordCursor.isNull(4)) {
+                    sum += recordCursor.getLong(4);
+                }
+                if (!recordCursor.isNull(5)) {
+                    sum += recordCursor.getDouble(5);
+                }
+                if (!recordCursor.isNull(6)) {
+                    sum += recordCursor.getDouble(6);
+                }
+                if (!recordCursor.isNull(7)) {
+                    sum += recordCursor.getDouble(7);
+                }
+                if (!recordCursor.isNull(8)) {
+                    sum += recordCursor.getSlice(8).length();
+                }
+                if (!recordCursor.isNull(9)) {
+                    sum += recordCursor.getSlice(9).length();
+                }
+                if (!recordCursor.isNull(10)) {
+                    sum += recordCursor.getSlice(10).length();
+                }
+                if (!recordCursor.isNull(11)) {
+                    sum += recordCursor.getSlice(11).length();
+                }
+                if (!recordCursor.isNull(12)) {
+                    sum += recordCursor.getSlice(12).length();
+                }
+                if (!recordCursor.isNull(13)) {
+                    sum += recordCursor.getSlice(13).length();
+                }
+                if (!recordCursor.isNull(14)) {
+                    sum += recordCursor.getSlice(14).length();
+                }
+                if (!recordCursor.isNull(15)) {
+                    sum += recordCursor.getSlice(15).length();
+                }
+            }
+            recordCursor.close();
+        }
+        return sum;
+    }
+
+    private static double benchmarkPredicatePushDown(
+            FileSplit fileSplit,
+            Properties partitionProperties,
+            HivePageSourceFactory pageSourceFactory)
+            throws IOException
+    {
+        HiveSplit split = createHiveSplit(fileSplit, partitionProperties);
+
+        double sum = 0;
+        for (int i = 0; i < LOOPS; i++) {
+            sum = 0;
+
+            ConnectorPageSource pageSource = pageSourceFactory.createPageSource(
+                    new Configuration(),
+                    split.getSession(),
+                    new Path(split.getPath()),
+                    split.getStart(),
+                    split.getLength(),
+                    split.getSchema(),
+                    ALL_COLUMNS,
+                    split.getPartitionKeys(),
+                    TupleDomain.withFixedValues(ImmutableMap.<HiveColumnHandle, Comparable<?>>of(Iterables.getOnlyElement(getHiveColumnHandles(ORDER_KEY)), FILTER_ORDER_KEY_ID)),
+                    DateTimeZone.UTC).get();
+
+            while (!pageSource.isFinished()) {
+                Page page = pageSource.getNextPage();
+                if (page == null) {
+                    continue;
+                }
+
+                Block block0 = page.getBlock(0);
+                Block block1 = page.getBlock(1);
+                Block block2 = page.getBlock(2);
+                Block block3 = page.getBlock(3);
+                Block block4 = page.getBlock(4);
+                Block block5 = page.getBlock(5);
+                Block block6 = page.getBlock(6);
+                Block block7 = page.getBlock(7);
+                Block block8 = page.getBlock(8);
+                Block block9 = page.getBlock(9);
+                Block block10 = page.getBlock(10);
+                Block block11 = page.getBlock(11);
+                Block block12 = page.getBlock(12);
+                Block block13 = page.getBlock(13);
+                Block block14 = page.getBlock(14);
+                Block block15 = page.getBlock(15);
+
+                for (int position = 0; position < page.getPositionCount(); position++) {
+                    if (!block0.isNull(position)) {
+                        long orderKey = BIGINT.getLong(block0, position);
+                        if (orderKey != FILTER_ORDER_KEY_ID) {
+                            continue;
+                        }
+                        sum += orderKey;
+                    }
+                    if (!block1.isNull(position)) {
+                        sum += BIGINT.getLong(block1, position);
+                    }
+                    if (!block2.isNull(position)) {
+                        sum += BIGINT.getLong(block2, position);
+                    }
+                    if (!block3.isNull(position)) {
+                        sum += BIGINT.getLong(block3, position);
+                    }
+                    if (!block4.isNull(position)) {
+                        sum += BIGINT.getLong(block4, position);
+                    }
+                    if (!block5.isNull(position)) {
+                        sum += DOUBLE.getDouble(block5, position);
+                    }
+                    if (!block6.isNull(position)) {
+                        sum += DOUBLE.getDouble(block6, position);
+                    }
+                    if (!block7.isNull(position)) {
+                        sum += DOUBLE.getDouble(block7, position);
+                    }
+                    if (!block8.isNull(position)) {
+                        sum += VARCHAR.getSlice(block8, position).length();
+                    }
+                    if (!block9.isNull(position)) {
+                        sum += VARCHAR.getSlice(block9, position).length();
+                    }
+                    if (!block10.isNull(position)) {
+                        sum += VARCHAR.getSlice(block10, position).length();
+                    }
+                    if (!block11.isNull(position)) {
+                        sum += VARCHAR.getSlice(block11, position).length();
+                    }
+                    if (!block12.isNull(position)) {
+                        sum += VARCHAR.getSlice(block12, position).length();
+                    }
+                    if (!block13.isNull(position)) {
+                        sum += VARCHAR.getSlice(block13, position).length();
+                    }
+                    if (!block14.isNull(position)) {
+                        sum += VARCHAR.getSlice(block14, position).length();
+                    }
+                    if (!block15.isNull(position)) {
+                        sum += VARCHAR.getSlice(block15, position).length();
+                    }
+                }
+            }
+            pageSource.close();
+        }
+        return sum;
+    }
+
     public static RecordWriter createRecordWriter(List<? extends TpchColumn<?>> columns, File outputFile, HiveOutputFormat<?, ?> outputFormat, CompressionType compressionCodec)
             throws Exception
     {
         JobConf jobConf = new JobConf();
         ReaderWriterProfiler.setProfilerOptions(jobConf);
-        if (compressionCodec != CompressionType.uncompressed) {
+        if (compressionCodec != CompressionType.none) {
             CompressionCodec codec = new CompressionCodecFactory(new Configuration()).getCodecByName(compressionCodec.toString());
             jobConf.set(COMPRESS_CODEC, codec.getClass().getName());
             jobConf.set(COMPRESS_TYPE, org.apache.hadoop.io.SequenceFile.CompressionType.BLOCK.toString());
@@ -1385,7 +1590,7 @@ public final class BenchmarkHiveFileFormats
                 jobConf,
                 new Path(outputFile.toURI()),
                 Text.class,
-                compressionCodec != CompressionType.uncompressed,
+                compressionCodec != CompressionType.none,
                 createTableProperties(columns),
                 new Progressable()
                 {
@@ -1409,7 +1614,7 @@ public final class BenchmarkHiveFileFormats
     {
         RecordWriter recordWriter = createRecordWriter(columns, outputFile, outputFormat, compressionType);
 
-        SettableStructObjectInspector objectInspector = getStandardStructObjectInspector(transform(columns, columnNameGetter()), transform(columns, objectInspectorGetter()));
+        SettableStructObjectInspector objectInspector = getStandardStructObjectInspector(transform(columns, input -> input.getColumnName()), transform(columns, input -> getObjectInspector(input)));
 
         Object row = objectInspector.create();
 
@@ -1446,10 +1651,10 @@ public final class BenchmarkHiveFileFormats
         Properties orderTableProperties = new Properties();
         orderTableProperties.setProperty(
                 "columns",
-                Joiner.on(',').join(transform(columns, columnNameGetter())));
+                Joiner.on(',').join(transform(columns, input -> input.getColumnName())));
         orderTableProperties.setProperty(
                 "columns.types",
-                Joiner.on(':').join(transform(columns, columnTypeGetter())));
+                Joiner.on(':').join(transform(columns, BenchmarkHiveFileFormats::getColumnType)));
         return orderTableProperties;
     }
 
@@ -1496,18 +1701,12 @@ public final class BenchmarkHiveFileFormats
         return columns.build();
     }
 
-    private static void logDuration(String label, CompressionType compressionType, long start, int loopCount, Object value)
+    private static void logDuration(String test, String formatName, String readerType, CompressionType compressionType, long start, int loopCount, Object value)
     {
         long end = System.nanoTime();
         long nanos = end - start;
-        Duration duration = new Duration(1.0 * nanos / loopCount, NANOSECONDS).convertTo(SECONDS);
-
-        String display = label;
-        if (compressionType != null) {
-            display += " " + compressionType;
-        }
-
-        System.out.printf("%30s %6s %s\n", display, duration, value);
+        Duration duration = new Duration(1.0 * nanos / loopCount, NANOSECONDS);
+        System.out.printf("%s\t%s\t%s\t%s\t%s\t%s\n", test, formatName, readerType, compressionType, duration.toMillis(), value);
     }
 
     private static DataSize getFileSize(File outputFile)
@@ -1515,65 +1714,34 @@ public final class BenchmarkHiveFileFormats
         return new DataSize(outputFile.length(), Unit.BYTE).convertToMostSuccinctDataSize();
     }
 
-    private static Function<TpchColumn<?>, String> columnNameGetter()
+    private static String getColumnType(TpchColumn<?> input)
     {
-        return new Function<TpchColumn<?>, String>()
-        {
-            @Override
-            public String apply(TpchColumn<?> input)
-            {
-                return input.getColumnName();
-            }
-        };
-    }
-
-    private static Function<TpchColumn<?>, String> columnTypeGetter()
-    {
-        return new Function<TpchColumn<?>, String>()
-        {
-            @Override
-            public String apply(TpchColumn<?> input)
-            {
-                Class<?> type = input.getType();
-                if (type == Long.class) {
-                    return "bigint";
-                }
-                if (type == Double.class) {
-                    return "double";
-                }
-                if (type == String.class) {
-                    return "string";
-                }
-                throw new IllegalArgumentException("Unsupported type " + type.getName());
-            }
-        };
-    }
-
-    private static Function<TpchColumn<?>, ObjectInspector> objectInspectorGetter()
-    {
-        return new Function<TpchColumn<?>, ObjectInspector>()
-        {
-            @Override
-            public ObjectInspector apply(TpchColumn<?> input)
-            {
-                return getObjectInspector(input);
-            }
-        };
+        switch (input.getType()) {
+            case BIGINT:
+                return "bigint";
+            case DATE:
+                return "date";
+            case DOUBLE:
+                return "double";
+            case VARCHAR:
+                return "string";
+        }
+        throw new IllegalArgumentException("Unsupported type " + input.getType());
     }
 
     private static ObjectInspector getObjectInspector(TpchColumn<?> input)
     {
-        Class<?> type = input.getType();
-        if (type == Long.class) {
-            return javaLongObjectInspector;
+        switch (input.getType()) {
+            case BIGINT:
+                return javaLongObjectInspector;
+            case DATE:
+                return javaDateObjectInspector;
+            case DOUBLE:
+                return javaDoubleObjectInspector;
+            case VARCHAR:
+                return javaStringObjectInspector;
         }
-        if (type == Double.class) {
-            return javaDoubleObjectInspector;
-        }
-        if (type == String.class) {
-            return javaStringObjectInspector;
-        }
-        throw new IllegalArgumentException("Unsupported type " + type.getName());
+        throw new IllegalArgumentException("Unsupported type " + input.getType());
     }
 
     private static String getCursorType(HiveRecordCursorProvider recordCursorProvider)
@@ -1588,7 +1756,7 @@ public final class BenchmarkHiveFileFormats
     {
         try {
             Path lineitemPath = new Path(file.toURI());
-            lineitemPath.getFileSystem(new Configuration()).setVerifyChecksum(true);
+            lineitemPath.getFileSystem(new Configuration()).setVerifyChecksum(false);
             return new FileSplit(lineitemPath, 0, file.length(), new String[0]);
         }
         catch (IOException e) {

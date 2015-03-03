@@ -18,7 +18,6 @@ import com.facebook.presto.client.Column;
 import com.facebook.presto.client.ErrorLocation;
 import com.facebook.presto.client.QueryResults;
 import com.facebook.presto.client.StatementClient;
-import com.google.common.base.Charsets;
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
@@ -36,11 +35,14 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.Writer;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.facebook.presto.cli.ConsolePrinter.REAL_TERMINAL;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class Query
         implements Closeable
@@ -55,6 +57,16 @@ public class Query
     public Query(StatementClient client)
     {
         this.client = checkNotNull(client, "client is null");
+    }
+
+    public Map<String, String> getSetSessionProperties()
+    {
+        return client.getSetSessionProperties();
+    }
+
+    public Set<String> getResetSessionProperties()
+    {
+        return client.getResetSessionProperties();
     }
 
     public void renderOutput(PrintStream out, OutputFormat outputFormat, boolean interactive)
@@ -102,20 +114,15 @@ public class Query
 
         if ((!client.isFailed()) && (!client.isGone()) && (!client.isClosed())) {
             QueryResults results = client.isValid() ? client.current() : client.finalResults();
-            if (results.getColumns() == null) {
+            if (results.getUpdateType() != null) {
+                renderUpdate(out, results);
+            }
+            else if (results.getColumns() == null) {
                 errorChannel.printf("Query %s has no columns\n", results.getId());
                 return;
             }
-
-            try {
-                renderResults(out, outputFormat, interactive, results);
-            }
-            catch (QueryAbortedException e) {
-                System.out.println("(query aborted by user)");
-                client.close();
-            }
-            catch (IOException e) {
-                throw Throwables.propagate(e);
+            else {
+                renderResults(out, outputFormat, interactive, results.getColumns());
             }
         }
 
@@ -141,10 +148,45 @@ public class Query
         }
     }
 
-    private void renderResults(PrintStream out, OutputFormat format, boolean interactive, QueryResults results)
+    private void renderUpdate(PrintStream out, QueryResults results)
+    {
+        String status = results.getUpdateType();
+        if (results.getUpdateCount() != null) {
+            long count = results.getUpdateCount();
+            status += format(": %s row%s", count, (count != 1) ? "s" : "");
+        }
+        out.println(status);
+        discardResults();
+    }
+
+    private void discardResults()
+    {
+        try (OutputHandler handler = new OutputHandler(new NullPrinter())) {
+            handler.processRows(client);
+        }
+        catch (IOException e) {
+            throw Throwables.propagate(e);
+        }
+    }
+
+    private void renderResults(PrintStream out, OutputFormat outputFormat, boolean interactive, List<Column> columns)
+    {
+        try {
+            doRenderResults(out, outputFormat, interactive, columns);
+        }
+        catch (QueryAbortedException e) {
+            System.out.println("(query aborted by user)");
+            client.close();
+        }
+        catch (IOException e) {
+            throw Throwables.propagate(e);
+        }
+    }
+
+    private void doRenderResults(PrintStream out, OutputFormat format, boolean interactive, List<Column> columns)
             throws IOException
     {
-        List<String> fieldNames = Lists.transform(results.getColumns(), Column.nameGetter());
+        List<String> fieldNames = Lists.transform(columns, Column::getName);
         if (interactive) {
             pageOutput(format, fieldNames);
         }
@@ -193,13 +235,15 @@ public class Query
                 return new TsvPrinter(fieldNames, writer, false);
             case TSV_HEADER:
                 return new TsvPrinter(fieldNames, writer, true);
+            case NULL:
+                return new NullPrinter();
         }
         throw new RuntimeException(format + " not supported");
     }
 
     private static Writer createWriter(OutputStream out)
     {
-        return new OutputStreamWriter(out, Charsets.UTF_8);
+        return new OutputStreamWriter(out, UTF_8);
     }
 
     @Override
@@ -215,6 +259,7 @@ public class Query
             renderStack(results, out);
         }
         renderErrorLocation(client.getQuery(), results, out);
+        out.println();
     }
 
     private static void renderErrorLocation(String query, QueryResults results, PrintStream out)
@@ -252,7 +297,7 @@ public class Query
             }
 
             ansi.reset();
-            out.println(ansi);
+            out.print(ansi);
         }
         else {
             String prefix = format("LINE %s: ", location.getLineNumber());

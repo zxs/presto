@@ -34,6 +34,12 @@ public class FailedQueryExecution
     }
 
     @Override
+    public QueryId getQueryId()
+    {
+        return queryInfo.getQueryId();
+    }
+
+    @Override
     public QueryInfo getQueryInfo()
     {
         return queryInfo;
@@ -56,12 +62,6 @@ public class FailedQueryExecution
     public void addStateChangeListener(StateChangeListener<QueryState> stateChangeListener)
     {
         stateChangeListener.stateChanged(QueryState.FAILED);
-    }
-
-    @Override
-    public void cancel()
-    {
-        // no-op
     }
 
     @Override

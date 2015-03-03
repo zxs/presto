@@ -30,8 +30,10 @@ import com.facebook.presto.spi.SchemaTablePrefix;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.inject.Inject;
 import io.airlift.json.JsonCodec;
+import io.airlift.slice.Slice;
+
+import javax.inject.Inject;
 
 import java.util.Collection;
 import java.util.List;
@@ -294,7 +296,7 @@ public class CassandraMetadata
     }
 
     @Override
-    public void commitCreateTable(ConnectorOutputTableHandle tableHandle, Collection<String> fragments)
+    public void commitCreateTable(ConnectorOutputTableHandle tableHandle, Collection<Slice> fragments)
     {
         CassandraOutputTableHandle outputTableHandle = checkType(tableHandle, CassandraOutputTableHandle.class, "tableHandle");
         schemaProvider.flushTable(new SchemaTableName(outputTableHandle.getSchemaName(), outputTableHandle.getTableName()));
@@ -307,7 +309,7 @@ public class CassandraMetadata
     }
 
     @Override
-    public void commitInsert(ConnectorInsertTableHandle insertHandle, Collection<String> fragments)
+    public void commitInsert(ConnectorInsertTableHandle insertHandle, Collection<Slice> fragments)
     {
         throw new UnsupportedOperationException();
     }

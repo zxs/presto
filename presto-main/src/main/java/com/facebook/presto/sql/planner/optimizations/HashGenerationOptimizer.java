@@ -26,7 +26,6 @@ import com.facebook.presto.sql.planner.plan.IndexJoinNode;
 import com.facebook.presto.sql.planner.plan.JoinNode;
 import com.facebook.presto.sql.planner.plan.MarkDistinctNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
-import com.facebook.presto.sql.planner.plan.PlanNodeRewriter;
 import com.facebook.presto.sql.planner.plan.PlanRewriter;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
@@ -38,18 +37,15 @@ import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.LongLiteral;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
-import com.google.common.base.Optional;
+import com.facebook.presto.sql.tree.Window;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-import static com.facebook.presto.sql.planner.plan.IndexJoinNode.EquiJoinClause.indexGetter;
-import static com.facebook.presto.sql.planner.plan.IndexJoinNode.EquiJoinClause.probeGetter;
-import static com.facebook.presto.sql.planner.plan.JoinNode.EquiJoinClause.leftGetter;
-import static com.facebook.presto.sql.planner.plan.JoinNode.EquiJoinClause.rightGetter;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -80,7 +76,7 @@ public class HashGenerationOptimizer
     }
 
     private static class Rewriter
-            extends PlanNodeRewriter<Void>
+            extends PlanRewriter<Void>
     {
         private final PlanNodeIdAllocator idAllocator;
         private final SymbolAllocator symbolAllocator;
@@ -92,9 +88,9 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteAggregation(AggregationNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitAggregation(AggregationNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             if (rewrittenSource == node.getSource() && node.getGroupBy().isEmpty()) {
                 return node;
             }
@@ -107,7 +103,7 @@ public class HashGenerationOptimizer
                         node.getMasks(),
                         node.getSampleWeight(),
                         node.getConfidence(),
-                        Optional.<Symbol>absent());
+                        Optional.empty());
             }
 
             Symbol hashSymbol = symbolAllocator.newHashSymbol();
@@ -124,27 +120,27 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteDistinctLimit(DistinctLimitNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitDistinctLimit(DistinctLimitNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             Symbol hashSymbol = symbolAllocator.newHashSymbol();
             PlanNode hashProjectNode = getHashProjectNode(idAllocator, rewrittenSource, hashSymbol, node.getOutputSymbols());
             return new DistinctLimitNode(idAllocator.getNextId(), hashProjectNode, node.getLimit(), Optional.of(hashSymbol));
         }
 
         @Override
-        public PlanNode rewriteMarkDistinct(MarkDistinctNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitMarkDistinct(MarkDistinctNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             Symbol hashSymbol = symbolAllocator.newHashSymbol();
             PlanNode hashProjectNode = getHashProjectNode(idAllocator, rewrittenSource, hashSymbol, node.getDistinctSymbols());
             return new MarkDistinctNode(idAllocator.getNextId(), hashProjectNode, node.getMarkerSymbol(), node.getDistinctSymbols(), Optional.of(hashSymbol));
         }
 
         @Override
-        public PlanNode rewriteRowNumber(RowNumberNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitRowNumber(RowNumberNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             if (rewrittenSource == node.getSource() && node.getPartitionBy().isEmpty()) {
                 return node;
             }
@@ -158,9 +154,9 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteTopNRowNumber(TopNRowNumberNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitTopNRowNumber(TopNRowNumberNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             if (rewrittenSource == node.getSource() && node.getPartitionBy().isEmpty()) {
                 return node;
             }
@@ -190,15 +186,15 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteJoin(JoinNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitJoin(JoinNode node, RewriteContext<Void> context)
         {
             List<JoinNode.EquiJoinClause> clauses = node.getCriteria();
 
-            List<Symbol> leftSymbols = Lists.transform(clauses, leftGetter());
-            List<Symbol> rightSymbols = Lists.transform(clauses, rightGetter());
+            List<Symbol> leftSymbols = Lists.transform(clauses, JoinNode.EquiJoinClause::getLeft);
+            List<Symbol> rightSymbols = Lists.transform(clauses, JoinNode.EquiJoinClause::getRight);
 
-            PlanNode rewrittenLeft = planRewriter.rewrite(node.getLeft(), null);
-            PlanNode rewrittenRight = planRewriter.rewrite(node.getRight(), null);
+            PlanNode rewrittenLeft = context.rewrite(node.getLeft(), null);
+            PlanNode rewrittenRight = context.rewrite(node.getRight(), null);
 
             Symbol leftHashSymbol = symbolAllocator.newHashSymbol();
             Symbol rightHashSymbol = symbolAllocator.newHashSymbol();
@@ -210,10 +206,10 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteSemiJoin(SemiJoinNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitSemiJoin(SemiJoinNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
-            PlanNode rewrittenFilteringSource = planRewriter.rewrite(node.getFilteringSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
+            PlanNode rewrittenFilteringSource = context.rewrite(node.getFilteringSource(), null);
 
             Symbol sourceHashSymbol = symbolAllocator.newHashSymbol();
             Symbol filteringSourceHashSymbol = symbolAllocator.newHashSymbol();
@@ -232,18 +228,18 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteIndexJoin(IndexJoinNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitIndexJoin(IndexJoinNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenIndex = planRewriter.rewrite(node.getIndexSource(), null);
-            PlanNode rewrittenProbe = planRewriter.rewrite(node.getProbeSource(), null);
+            PlanNode rewrittenIndex = context.rewrite(node.getIndexSource(), null);
+            PlanNode rewrittenProbe = context.rewrite(node.getProbeSource(), null);
 
             Symbol indexHashSymbol = symbolAllocator.newHashSymbol();
             Symbol probeHashSymbol = symbolAllocator.newHashSymbol();
 
             List<IndexJoinNode.EquiJoinClause> clauses = node.getCriteria();
 
-            List<Symbol> indexSymbols = Lists.transform(clauses, indexGetter());
-            List<Symbol> probeSymbols = Lists.transform(clauses, probeGetter());
+            List<Symbol> indexSymbols = Lists.transform(clauses, IndexJoinNode.EquiJoinClause::getIndex);
+            List<Symbol> probeSymbols = Lists.transform(clauses, IndexJoinNode.EquiJoinClause::getProbe);
 
             PlanNode indexHashProjectNode = getHashProjectNode(idAllocator, rewrittenIndex, indexHashSymbol, indexSymbols);
             PlanNode probeHashProjectNode = getHashProjectNode(idAllocator, rewrittenProbe, probeHashSymbol, probeSymbols);
@@ -258,9 +254,9 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanNode rewriteWindow(WindowNode node, Void context, PlanRewriter<Void> planRewriter)
+        public PlanNode visitWindow(WindowNode node, RewriteContext<Void> context)
         {
-            PlanNode rewrittenSource = planRewriter.rewrite(node.getSource(), null);
+            PlanNode rewrittenSource = context.rewrite(node.getSource(), null);
             if (rewrittenSource == node.getSource() && node.getPartitionBy().isEmpty()) {
                 return node;
             }
@@ -270,9 +266,10 @@ public class HashGenerationOptimizer
                         node.getPartitionBy(),
                         node.getOrderBy(),
                         node.getOrderings(),
+                        node.getFrame(),
                         node.getWindowFunctions(),
                         node.getSignatures(),
-                        Optional.<Symbol>absent());
+                        Optional.empty());
             }
             Symbol hashSymbol = symbolAllocator.newHashSymbol();
             PlanNode hashProjectNode = getHashProjectNode(idAllocator, rewrittenSource, hashSymbol, node.getPartitionBy());
@@ -281,6 +278,7 @@ public class HashGenerationOptimizer
                     node.getPartitionBy(),
                     node.getOrderBy(),
                     node.getOrderings(),
+                    node.getFrame(),
                     node.getWindowFunctions(),
                     node.getSignatures(),
                     Optional.of(hashSymbol));
@@ -312,7 +310,7 @@ public class HashGenerationOptimizer
 
     private static Expression getHashFunctionCall(Expression previousHashValue, Symbol symbol)
     {
-        FunctionCall functionCall = new FunctionCall(QualifiedName.of(HASH_CODE), null, false, ImmutableList.<Expression>of(new QualifiedNameReference(symbol.toQualifiedName())));
+        FunctionCall functionCall = new FunctionCall(QualifiedName.of(HASH_CODE), Optional.<Window>empty(), false, ImmutableList.<Expression>of(new QualifiedNameReference(symbol.toQualifiedName())));
         List<Expression> arguments = ImmutableList.of(previousHashValue, functionCall);
         return new FunctionCall(QualifiedName.of("combine_hash"), arguments);
     }

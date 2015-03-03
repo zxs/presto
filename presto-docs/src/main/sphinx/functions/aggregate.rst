@@ -7,15 +7,27 @@ Aggregate functions operate on a set of values to compute a single result.
 Except for :func:`count`, :func:`count_if`, :func:`max_by` and :func:`approx_distinct`, all
 of these aggregate functions ignore null values and return null for no input
 rows or when all values are null. For example, :func:`sum` returns null
-rather than zero and :func:`avg` does include null values in the count.
+rather than zero and :func:`avg` does not include null values in the count.
 The ``coalesce`` function can be used to convert null into zero.
 
 General Aggregate Functions
 ---------------------------
 
+.. function:: arbitrary(x) -> [same as input]
+
+    Returns an arbitrary non-null value of ``x``, if one exists.
+
 .. function:: avg(x) -> double
 
     Returns the average (arithmetic mean) of all input values.
+
+.. function:: bool_and(boolean) -> boolean
+
+    Returns ``TRUE`` if every input value is ``TRUE``, otherwise ``FALSE``.
+
+.. function:: bool_or(boolean) -> boolean
+
+    Returns ``TRUE`` if any input value is ``TRUE``, otherwise ``FALSE``.
 
 .. function:: count(*) -> bigint
 
@@ -30,9 +42,17 @@ General Aggregate Functions
     Returns the number of ``TRUE`` input values.
     This function is equivalent to ``count(CASE WHEN x THEN 1 END)``.
 
+.. function:: every(boolean) -> boolean
+
+    This is an alias for :func:`bool_and`.
+
 .. function:: max_by(x, y) -> [same as x]
 
     Returns the value of ``x`` associated with the maximum value of ``y`` over all input values.
+
+.. function:: min_by(x, y) -> [same as x]
+
+    Returns the value of ``x`` associated with the minimum value of ``y`` over all input values.
 
 .. function:: max(x) -> [same as input]
 
@@ -46,6 +66,13 @@ General Aggregate Functions
 
     Returns the sum of all input values.
 
+Map Aggregate Functions
+-----------------------
+
+.. function:: map_agg(key, value) -> map<K,V>
+
+    Returns a map created from the input ``key`` / ``value`` pairs.
+
 Approximate Aggregate Functions
 -------------------------------
 
@@ -55,10 +82,22 @@ Approximate Aggregate Functions
     This function provides an approximation of ``count(DISTINCT x)``.
     Zero is returned if all input values are null.
 
-    This function uses HyperLogLog configured with 2048 buckets. It should
-    produce a standard error of 2.3%, which is the standard deviation of the
-    (approximately normal) error distribution over all possible sets. It does
-    not guarantee an upper bound on the error for any specific input set.
+    This function should produce a standard error of 2.3%, which is the
+    standard deviation of the (approximately normal) error distribution over
+    all possible sets. It does not guarantee an upper bound on the error for
+    any specific input set.
+
+.. function:: approx_distinct(x, e) -> bigint
+
+    Returns the approximate number of distinct input values.
+    This function provides an approximation of ``count(DISTINCT x)``.
+    Zero is returned if all input values are null.
+
+    This function should produce a standard error of no more than ``e``, which
+    is the standard deviation of the (approximately normal) error distribution
+    over all possible sets. It does not guarantee an upper bound on the error
+    for any specific input set. The current implementation of this function
+    requires that ``e`` be in the range: [0.01150, 0.26000].
 
 .. function:: approx_percentile(x, p) -> [same as input]
 

@@ -24,7 +24,8 @@ import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.planner.DependencyExtractor;
 import com.facebook.presto.sql.planner.Symbol;
-import com.facebook.presto.sql.tree.ArithmeticExpression;
+import com.facebook.presto.sql.tree.ArithmeticBinaryExpression;
+import com.facebook.presto.sql.tree.ArithmeticUnaryExpression;
 import com.facebook.presto.sql.tree.ArrayConstructor;
 import com.facebook.presto.sql.tree.AstVisitor;
 import com.facebook.presto.sql.tree.BetweenPredicate;
@@ -33,6 +34,7 @@ import com.facebook.presto.sql.tree.Cast;
 import com.facebook.presto.sql.tree.CoalesceExpression;
 import com.facebook.presto.sql.tree.ComparisonExpression;
 import com.facebook.presto.sql.tree.CurrentTime;
+import com.facebook.presto.sql.tree.DefaultTraversalVisitor;
 import com.facebook.presto.sql.tree.DoubleLiteral;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.Extract;
@@ -48,13 +50,13 @@ import com.facebook.presto.sql.tree.IsNullPredicate;
 import com.facebook.presto.sql.tree.LikePredicate;
 import com.facebook.presto.sql.tree.LogicalBinaryExpression;
 import com.facebook.presto.sql.tree.LongLiteral;
-import com.facebook.presto.sql.tree.NegativeExpression;
 import com.facebook.presto.sql.tree.Node;
 import com.facebook.presto.sql.tree.NotExpression;
 import com.facebook.presto.sql.tree.NullIfExpression;
 import com.facebook.presto.sql.tree.NullLiteral;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
+import com.facebook.presto.sql.tree.Row;
 import com.facebook.presto.sql.tree.SearchedCaseExpression;
 import com.facebook.presto.sql.tree.SimpleCaseExpression;
 import com.facebook.presto.sql.tree.SortItem;
@@ -64,22 +66,20 @@ import com.facebook.presto.sql.tree.SubscriptExpression;
 import com.facebook.presto.sql.tree.TimeLiteral;
 import com.facebook.presto.sql.tree.TimestampLiteral;
 import com.facebook.presto.sql.tree.WhenClause;
+import com.facebook.presto.sql.tree.WindowFrame;
 import com.facebook.presto.type.RowType;
-import com.facebook.presto.util.IterableTransformer;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 
 import static com.facebook.presto.metadata.FunctionRegistry.canCoerce;
@@ -109,9 +109,11 @@ import static com.facebook.presto.type.RowType.RowField;
 import static com.facebook.presto.type.UnknownType.UNKNOWN;
 import static com.facebook.presto.util.DateTimeUtils.timeHasTimeZone;
 import static com.facebook.presto.util.DateTimeUtils.timestampHasTimeZone;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static com.facebook.presto.util.Types.checkType;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Sets.newIdentityHashSet;
 
 public class ExpressionAnalyzer
 {
@@ -125,7 +127,7 @@ public class ExpressionAnalyzer
     private final IdentityHashMap<Expression, Type> expressionTypes = new IdentityHashMap<>();
     private final IdentityHashMap<Expression, Type> expressionCoercions = new IdentityHashMap<>();
     private final IdentityHashMap<Expression, Boolean> rowFieldAccessors = new IdentityHashMap<>();
-    private final Set<InPredicate> subqueryInPredicates = Collections.newSetFromMap(new IdentityHashMap<InPredicate, Boolean>());
+    private final Set<InPredicate> subqueryInPredicates = newIdentityHashSet();
 
     public ExpressionAnalyzer(Analysis analysis, Session session, Metadata metadata, SqlParser sqlParser, boolean experimentalSyntaxEnabled)
     {
@@ -172,9 +174,35 @@ public class ExpressionAnalyzer
      */
     public Type analyze(Expression expression, TupleDescriptor tupleDescriptor, AnalysisContext context)
     {
-        Visitor visitor = new Visitor(tupleDescriptor);
+        ScalarSubqueryDetector scalarSubqueryDetector = new ScalarSubqueryDetector();
+        expression.accept(scalarSubqueryDetector, null);
 
+        Visitor visitor = new Visitor(tupleDescriptor);
         return expression.accept(visitor, context);
+    }
+
+    private static class ScalarSubqueryDetector
+            extends DefaultTraversalVisitor<Void, Void>
+    {
+        @Override
+        protected Void visitInPredicate(InPredicate node, Void context)
+        {
+            Expression valueList = node.getValueList();
+            if (valueList instanceof SubqueryExpression) {
+                process(node.getValue(), context);
+                super.visitSubqueryExpression((SubqueryExpression) valueList, context);
+            }
+            else {
+                super.visitInPredicate(node, context);
+            }
+            return null;
+        }
+
+        @Override
+        protected Void visitSubqueryExpression(SubqueryExpression node, Void context)
+        {
+            throw new SemanticException(SemanticErrorCode.NOT_SUPPORTED, node, "Scalar subqueries not yet supported");
+        }
     }
 
     private class Visitor
@@ -196,6 +224,19 @@ public class ExpressionAnalyzer
                 return type;
             }
             return super.process(node, context);
+        }
+
+        @Override
+        protected Type visitRow(Row node, AnalysisContext context)
+        {
+            List<Type> types = node.getItems().stream()
+                    .map((child) -> process(child, context))
+                    .collect(toImmutableList());
+
+            Type type = new RowType(types, Optional.empty());
+            expressionTypes.put(node, type);
+
+            return type;
         }
 
         @Override
@@ -269,7 +310,7 @@ public class ExpressionAnalyzer
                 RowType rowType = checkType(field.getType(), RowType.class, "field.getType()");
                 Type rowFieldType = null;
                 for (RowField rowField : rowType.getFields()) {
-                    if (rowField.getName().equals(node.getName().getSuffix())) {
+                    if (rowField.getName().equals(Optional.of(node.getName().getSuffix()))) {
                         rowFieldType = rowField.getType();
                         break;
                     }
@@ -415,15 +456,13 @@ public class ExpressionAnalyzer
             return type;
         }
 
-        private List<Expression> getCaseResultExpressions(List<WhenClause> whenClauses, Expression defaultValue)
+        private List<Expression> getCaseResultExpressions(List<WhenClause> whenClauses, Optional<Expression> defaultValue)
         {
             List<Expression> resultExpressions = new ArrayList<>();
             for (WhenClause whenClause : whenClauses) {
                 resultExpressions.add(whenClause.getResult());
             }
-            if (defaultValue != null) {
-                resultExpressions.add(defaultValue);
-            }
+            defaultValue.ifPresent(resultExpressions::add);
             return resultExpressions;
         }
 
@@ -437,13 +476,28 @@ public class ExpressionAnalyzer
         }
 
         @Override
-        protected Type visitNegativeExpression(NegativeExpression node, AnalysisContext context)
+        protected Type visitArithmeticUnary(ArithmeticUnaryExpression node, AnalysisContext context)
         {
-            return getOperator(context, node, OperatorType.NEGATION, node.getValue());
+            switch (node.getSign()) {
+                case PLUS:
+                    Type type = process(node.getValue(), context);
+
+                    if (!type.equals(BIGINT) && !type.equals(DOUBLE)) {
+                        // TODO: figure out a type-agnostic way of dealing with this. Maybe add a special unary operator
+                        // that types can chose to implement, or piggyback on the existence of the negation operator
+                        throw new SemanticException(TYPE_MISMATCH, node, "Unary '+' operator cannot by applied to %s type", type);
+                    }
+                    expressionTypes.put(node, type);
+                    break;
+                case MINUS:
+                    return getOperator(context, node, OperatorType.NEGATION, node.getValue());
+            }
+
+            throw new UnsupportedOperationException("Unsupported unary operator: " + node.getSign());
         }
 
         @Override
-        protected Type visitArithmeticExpression(ArithmeticExpression node, AnalysisContext context)
+        protected Type visitArithmeticBinary(ArithmeticBinaryExpression node, AnalysisContext context)
         {
             return getOperator(context, node, OperatorType.valueOf(node.getType().name()), node.getLeft(), node.getRight());
         }
@@ -587,8 +641,26 @@ public class ExpressionAnalyzer
                 for (SortItem sortItem : node.getWindow().get().getOrderBy()) {
                     process(sortItem.getSortKey(), context);
                     Type type = expressionTypes.get(sortItem.getSortKey());
-                    if (!type.isComparable()) {
-                        throw new SemanticException(TYPE_MISMATCH, node, "%s is not comparable, and therefore cannot be used in window function ORDER BY", type);
+                    if (!type.isOrderable()) {
+                        throw new SemanticException(TYPE_MISMATCH, node, "%s is not orderable, and therefore cannot be used in window function ORDER BY", type);
+                    }
+                }
+
+                if (node.getWindow().get().getFrame().isPresent()) {
+                    WindowFrame frame = node.getWindow().get().getFrame().get();
+
+                    if (frame.getStart().getValue().isPresent()) {
+                        Type type = process(frame.getStart().getValue().get(), context);
+                        if (!type.equals(BIGINT)) {
+                            throw new SemanticException(TYPE_MISMATCH, node, "Window frame start value type must be BIGINT (actual %s)", type);
+                        }
+                    }
+
+                    if (frame.getEnd().isPresent() && frame.getEnd().get().getValue().isPresent()) {
+                        Type type = process(frame.getEnd().get().getValue().get(), context);
+                        if (!type.equals(BIGINT)) {
+                            throw new SemanticException(TYPE_MISMATCH, node, "Window frame end value type must be BIGINT (actual %s)", type);
+                        }
                     }
                 }
             }
@@ -657,6 +729,10 @@ public class ExpressionAnalyzer
                 throw new SemanticException(TYPE_MISMATCH, node, "Unknown type: " + node.getType());
             }
 
+            if (type == UNKNOWN) {
+                throw new SemanticException(TYPE_MISMATCH, node, "UNKNOWN is not a valid type");
+            }
+
             Type value = process(node.getExpression(), context);
             if (value != UNKNOWN) {
                 try {
@@ -688,6 +764,7 @@ public class ExpressionAnalyzer
                         ImmutableList.<Expression>builder().add(value).addAll(inListExpression.getValues()).build());
             }
             else if (valueList instanceof SubqueryExpression) {
+                coerceToSingleType(context, node, "value and result of subquery must be of the same type for IN expression: %s vs %s", value, valueList);
                 subqueryInPredicates.add(node);
             }
 
@@ -707,7 +784,7 @@ public class ExpressionAnalyzer
         @Override
         protected Type visitSubqueryExpression(SubqueryExpression node, AnalysisContext context)
         {
-            StatementAnalyzer analyzer = new StatementAnalyzer(analysis, metadata, sqlParser, session, experimentalSyntaxEnabled, Optional.<QueryExplainer>absent());
+            StatementAnalyzer analyzer = new StatementAnalyzer(analysis, metadata, sqlParser, session, experimentalSyntaxEnabled, Optional.empty());
             TupleDescriptor descriptor = analyzer.process(node.getQuery(), context);
 
             // Scalar subqueries should only produce one column
@@ -883,18 +960,13 @@ public class ExpressionAnalyzer
             final Map<Symbol, Type> types,
             Iterable<? extends Expression> expressions)
     {
-        List<Field> fields = IterableTransformer.on(DependencyExtractor.extractUnique(expressions))
-                .transform(new Function<Symbol, Field>()
-                {
-                    @Override
-                    public Field apply(Symbol symbol)
-                    {
-                        Type type = types.get(symbol);
-                        checkArgument(type != null, "No type for symbol %s", symbol);
-                        return Field.newUnqualified(symbol.getName(), type);
-                    }
+        List<Field> fields = DependencyExtractor.extractUnique(expressions).stream()
+                .map(symbol -> {
+                    Type type = types.get(symbol);
+                    checkArgument(type != null, "No type for symbol %s", symbol);
+                    return Field.newUnqualified(symbol.getName(), type);
                 })
-                .list();
+                .collect(toImmutableList());
 
         return analyzeExpressions(session, metadata, sqlParser, new TupleDescriptor(fields), expressions);
     }
@@ -908,7 +980,7 @@ public class ExpressionAnalyzer
     {
         Field[] fields = new Field[types.size()];
         for (Entry<Integer, Type> entry : types.entrySet()) {
-            fields[entry.getKey()] = Field.newUnqualified(Optional.<String>absent(), entry.getValue());
+            fields[entry.getKey()] = Field.newUnqualified(Optional.empty(), entry.getValue());
         }
         TupleDescriptor tupleDescriptor = new TupleDescriptor(fields);
 

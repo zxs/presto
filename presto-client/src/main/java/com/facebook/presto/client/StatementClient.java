@@ -13,8 +13,10 @@
  */
 package com.facebook.presto.client;
 
-import com.google.common.base.Charsets;
-import com.google.common.base.Objects;
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import io.airlift.http.client.FullJsonResponseHandler;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.HttpStatus;
@@ -25,11 +27,17 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import java.io.Closeable;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.Map;
 
+import static com.facebook.presto.client.PrestoHeaders.PRESTO_CLEAR_SESSION;
+import static com.facebook.presto.client.PrestoHeaders.PRESTO_SET_SESSION;
+import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.net.HttpHeaders.USER_AGENT;
@@ -46,6 +54,7 @@ import static io.airlift.http.client.StaticBodyGenerator.createStaticBodyGenerat
 import static io.airlift.http.client.StatusResponseHandler.StatusResponse;
 import static io.airlift.http.client.StatusResponseHandler.createStatusResponseHandler;
 import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
@@ -53,15 +62,18 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 public class StatementClient
         implements Closeable
 {
+    private static final Splitter SESSION_HEADER_SPLITTER = Splitter.on('=').limit(2).trimResults();
     private static final String USER_AGENT_VALUE = StatementClient.class.getSimpleName() +
             "/" +
-            Objects.firstNonNull(StatementClient.class.getPackage().getImplementationVersion(), "unknown");
+            firstNonNull(StatementClient.class.getPackage().getImplementationVersion(), "unknown");
 
     private final HttpClient httpClient;
     private final FullJsonResponseHandler<QueryResults> responseHandler;
     private final boolean debug;
     private final String query;
     private final AtomicReference<QueryResults> currentResults = new AtomicReference<>();
+    private final Map<String, String> setSessionProperties = new ConcurrentHashMap<>();
+    private final Set<String> resetSessionProperties = Sets.newConcurrentHashSet();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean gone = new AtomicBoolean();
     private final AtomicBoolean valid = new AtomicBoolean(true);
@@ -81,14 +93,20 @@ public class StatementClient
         this.query = query;
 
         Request request = buildQueryRequest(session, query);
-        currentResults.set(httpClient.execute(request, responseHandler).getValue());
+        JsonResponse<QueryResults> response = httpClient.execute(request, responseHandler);
+
+        if (response.getStatusCode() != HttpStatus.OK.code() || !response.hasValue()) {
+            throw requestFailedException("starting query", request, response);
+        }
+
+        processResponse(response);
     }
 
     private static Request buildQueryRequest(ClientSession session, String query)
     {
         Request.Builder builder = preparePost()
                 .setUri(uriBuilderFrom(session.getServer()).replacePath("/v1/statement").build())
-                .setBodyGenerator(createStaticBodyGenerator(query, Charsets.UTF_8));
+                .setBodyGenerator(createStaticBodyGenerator(query, UTF_8));
 
         if (session.getUser() != null) {
             builder.setHeader(PrestoHeaders.PRESTO_USER, session.getUser());
@@ -156,6 +174,16 @@ public class StatementClient
         return currentResults.get();
     }
 
+    public Map<String, String> getSetSessionProperties()
+    {
+        return ImmutableMap.copyOf(setSessionProperties);
+    }
+
+    public Set<String> getResetSessionProperties()
+    {
+        return ImmutableSet.copyOf(resetSessionProperties);
+    }
+
     public boolean isValid()
     {
         return valid.get() && (!isGone()) && (!isClosed());
@@ -194,25 +222,45 @@ public class StatementClient
             }
 
             if (response.getStatusCode() == HttpStatus.OK.code() && response.hasValue()) {
-                currentResults.set(response.getValue());
+                processResponse(response);
                 return true;
             }
 
             if (response.getStatusCode() != HttpStatus.SERVICE_UNAVAILABLE.code()) {
-                gone.set(true);
-                if (!response.hasValue()) {
-                    throw new RuntimeException(format("Error fetching next at %s returned an invalid response: %s", request.getUri(), response), response.getException());
-                }
-                throw new RuntimeException(format("Error fetching next at %s returned %s: %s",
-                        request.getUri(),
-                        response.getStatusCode(),
-                        response.getStatusMessage()));
+                throw requestFailedException("fetching next", request, response);
             }
         }
         while ((System.nanoTime() - start) < MINUTES.toNanos(2) && !isClosed());
 
         gone.set(true);
         throw new RuntimeException("Error fetching next", cause);
+    }
+
+    private void processResponse(JsonResponse<QueryResults> response)
+    {
+        for (String setSession : response.getHeaders().get(PRESTO_SET_SESSION)) {
+            List<String> keyValue = SESSION_HEADER_SPLITTER.splitToList(setSession);
+            if (keyValue.size() != 2) {
+                continue;
+            }
+            setSessionProperties.put(keyValue.get(0), keyValue.size() > 1 ? keyValue.get(1) : "");
+        }
+        for (String clearSession : response.getHeaders().get(PRESTO_CLEAR_SESSION)) {
+            resetSessionProperties.add(clearSession);
+        }
+        currentResults.set(response.getValue());
+    }
+
+    private RuntimeException requestFailedException(String task, Request request, JsonResponse<QueryResults> response)
+    {
+        gone.set(true);
+        if (!response.hasValue()) {
+            return new RuntimeException(format("Error " + task + " at %s returned an invalid response: %s", request.getUri(), response), response.getException());
+        }
+        return new RuntimeException(format("Error " + task + " at %s returned %s: %s",
+                request.getUri(),
+                response.getStatusCode(),
+                response.getStatusMessage()));
     }
 
     public boolean cancelLeafStage()

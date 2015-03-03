@@ -23,13 +23,13 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.type.Type;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import io.airlift.units.DataSize;
 import io.airlift.units.DataSize.Unit;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -90,9 +90,9 @@ public class IndexSnapshotBuilder
                 .addDriverContext()
                 .addOperatorContext(0, "operator");
 
-        this.outputPagesIndex = new PagesIndex(outputTypes, expectedPositions, bogusOperatorContext);
-        this.missingKeysIndex = new PagesIndex(missingKeysTypes.build(), expectedPositions, bogusOperatorContext);
-        this.missingKeys = missingKeysIndex.createLookupSource(this.missingKeysChannels);
+        this.outputPagesIndex = new PagesIndex(outputTypes, expectedPositions);
+        this.missingKeysIndex = new PagesIndex(missingKeysTypes.build(), expectedPositions);
+        this.missingKeys = missingKeysIndex.createLookupSource(this.missingKeysChannels, bogusOperatorContext);
     }
 
     public List<Type> getOutputTypes()
@@ -126,10 +126,11 @@ public class IndexSnapshotBuilder
         checkState(!isMemoryExceeded(), "Max memory exceeded");
         for (Page page : pages) {
             outputPagesIndex.addPage(page);
+            bogusOperatorContext.setMemoryReservation(outputPagesIndex.getEstimatedSize().toBytes());
         }
         pages.clear();
 
-        LookupSource lookupSource = outputPagesIndex.createLookupSource(keyOutputChannels, keyOutputHashChannel);
+        LookupSource lookupSource = outputPagesIndex.createLookupSource(keyOutputChannels, bogusOperatorContext, keyOutputHashChannel);
 
         // Build a page containing the keys that produced no output rows, so in future requests can skip these keys
         PageBuilder missingKeysPageBuilder = new PageBuilder(missingKeysIndex.getTypes());
@@ -139,6 +140,7 @@ public class IndexSnapshotBuilder
             Page page = indexKeysRecordCursor.getPage();
             int position = indexKeysRecordCursor.getPosition();
             if (lookupSource.getJoinPosition(position, page) < 0) {
+                missingKeysPageBuilder.declarePosition();
                 for (int i = 0; i < blocks.length; i++) {
                     Block block = blocks[i];
                     Type type = indexKeysRecordCursor.getType(i);
@@ -156,7 +158,7 @@ public class IndexSnapshotBuilder
         // only update missing keys if we have new missing keys
         if (!missingKeysPageBuilder.isEmpty()) {
             missingKeysIndex.addPage(missingKeysPage);
-            missingKeys = missingKeysIndex.createLookupSource(missingKeysChannels);
+            missingKeys = missingKeysIndex.createLookupSource(missingKeysChannels, bogusOperatorContext);
         }
 
         return new IndexSnapshot(lookupSource, missingKeys);
@@ -166,7 +168,7 @@ public class IndexSnapshotBuilder
     {
         memoryInBytes = 0;
         pages.clear();
-        outputPagesIndex = new PagesIndex(outputTypes, expectedPositions, bogusOperatorContext);
-        missingKeysIndex = new PagesIndex(missingKeysTypes, expectedPositions, bogusOperatorContext);
+        outputPagesIndex = new PagesIndex(outputTypes, expectedPositions);
+        missingKeysIndex = new PagesIndex(missingKeysTypes, expectedPositions);
     }
 }

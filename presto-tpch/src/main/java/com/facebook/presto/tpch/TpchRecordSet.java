@@ -16,12 +16,12 @@ package com.facebook.presto.tpch;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.RecordSet;
 import com.facebook.presto.spi.type.Type;
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 import io.airlift.tpch.TpchColumn;
+import io.airlift.tpch.TpchColumnType;
 import io.airlift.tpch.TpchEntity;
 import io.airlift.tpch.TpchTable;
 
@@ -61,7 +61,7 @@ public class TpchRecordSet<E extends TpchEntity>
         this.table = table;
         this.columns = ImmutableList.copyOf(columns);
 
-        this.columnTypes = ImmutableList.copyOf(transform(columns, columnTypeGetter()));
+        this.columnTypes = ImmutableList.copyOf(transform(columns, column -> getPrestoType(column.getType())));
     }
 
     @Override
@@ -137,7 +137,11 @@ public class TpchRecordSet<E extends TpchEntity>
         public long getLong(int field)
         {
             checkState(row != null, "No current row");
-            return getTpchColumn(field).getLong(row);
+            TpchColumn<E> tpchColumn = getTpchColumn(field);
+            if (tpchColumn.getType() == TpchColumnType.DATE) {
+                return tpchColumn.getDate(row);
+            }
+            return tpchColumn.getLong(row);
         }
 
         @Override
@@ -171,17 +175,5 @@ public class TpchRecordSet<E extends TpchEntity>
         {
             return columns.get(field);
         }
-    }
-
-    public static Function<TpchColumn<?>, Type> columnTypeGetter()
-    {
-        return new Function<TpchColumn<?>, Type>()
-        {
-            @Override
-            public Type apply(TpchColumn<?> columnMetadata)
-            {
-                return getPrestoType(columnMetadata.getType());
-            }
-        };
     }
 }

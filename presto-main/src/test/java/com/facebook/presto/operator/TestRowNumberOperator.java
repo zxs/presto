@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.operator;
 
+import com.facebook.presto.RowPagesBuilder;
 import com.facebook.presto.execution.TaskId;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.block.Block;
@@ -20,9 +21,6 @@ import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.testing.MaterializedResult;
-import com.facebook.presto.util.IterableTransformer;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
@@ -34,15 +32,17 @@ import org.testng.annotations.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
+import static com.facebook.presto.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.operator.OperatorAssertion.toMaterializedResult;
 import static com.facebook.presto.operator.OperatorAssertion.toPages;
-import static com.facebook.presto.operator.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.testing.MaterializedResult.resultBuilder;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.airlift.testing.Assertions.assertEqualsIgnoreOrder;
 import static java.util.concurrent.Executors.newCachedThreadPool;
@@ -57,7 +57,7 @@ public class TestRowNumberOperator
     @BeforeClass
     public void setUp()
     {
-        executor = newCachedThreadPool(daemonThreadsNamed("test"));
+        executor = newCachedThreadPool(daemonThreadsNamed("test-%s"));
     }
 
     @AfterClass
@@ -105,8 +105,8 @@ public class TestRowNumberOperator
                 Ints.asList(1, 0),
                 Ints.asList(),
                 ImmutableList.<Type>of(),
-                Optional.<Integer>absent(),
-                Optional.<Integer>absent(),
+                Optional.empty(),
+                Optional.empty(),
                 10);
 
         Operator operator = operatorFactory.createOperator(driverContext);
@@ -228,7 +228,7 @@ public class TestRowNumberOperator
                 Ints.asList(0),
                 ImmutableList.of(BIGINT),
                 Optional.of(3),
-                Optional.<Integer>absent(),
+                Optional.empty(),
                 10);
 
         Operator operator = operatorFactory.createOperator(driverContext);
@@ -298,7 +298,7 @@ public class TestRowNumberOperator
                 Ints.asList(),
                 ImmutableList.<Type>of(),
                 Optional.of(3),
-                Optional.<Integer>absent(),
+                Optional.empty(),
                 10);
 
         Operator operator = operatorFactory.createOperator(driverContext);
@@ -342,14 +342,11 @@ public class TestRowNumberOperator
 
     private static List<Page> stripRowNumberColumn(List<Page> input)
     {
-        return IterableTransformer.on(input).transform(new Function<Page, Page>()
-        {
-            @Override
-            public Page apply(Page page)
-            {
-                Block[] blocks = Arrays.copyOf(page.getBlocks(), page.getChannelCount() - 1);
-                return new Page(blocks);
-            }
-        }).list();
+        return input.stream()
+                .map(page -> {
+                    Block[] blocks = Arrays.copyOf(page.getBlocks(), page.getChannelCount() - 1);
+                    return new Page(blocks);
+                })
+                .collect(toImmutableList());
     }
 }

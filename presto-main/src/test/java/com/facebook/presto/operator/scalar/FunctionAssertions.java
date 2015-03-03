@@ -39,6 +39,7 @@ import com.facebook.presto.spi.FixedPageSource;
 import com.facebook.presto.spi.HostAddress;
 import com.facebook.presto.spi.InMemoryRecordSet;
 import com.facebook.presto.spi.Page;
+import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.RecordPageSource;
 import com.facebook.presto.spi.RecordSet;
 import com.facebook.presto.spi.block.Block;
@@ -62,7 +63,6 @@ import com.facebook.presto.sql.tree.ExpressionTreeRewriter;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
 import com.facebook.presto.testing.LocalQueryRunner;
 import com.facebook.presto.testing.MaterializedResult;
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -86,6 +86,7 @@ import static com.facebook.presto.block.BlockAssertions.createLongsBlock;
 import static com.facebook.presto.block.BlockAssertions.createStringsBlock;
 import static com.facebook.presto.operator.scalar.FunctionAssertions.TestSplit.createNormalSplit;
 import static com.facebook.presto.operator.scalar.FunctionAssertions.TestSplit.createRecordSetSplit;
+import static com.facebook.presto.spi.StandardErrorCode.INVALID_CAST_ARGUMENT;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
@@ -98,11 +99,13 @@ import static com.facebook.presto.sql.tree.BooleanLiteral.TRUE_LITERAL;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.airlift.testing.Assertions.assertInstanceOf;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.Executors.newCachedThreadPool;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 public final class FunctionAssertions
 {
@@ -195,15 +198,32 @@ public final class FunctionAssertions
             expected = ((Integer) expected).longValue();
         }
         else if (expected instanceof Slice) {
-            expected = ((Slice) expected).toString(Charsets.UTF_8);
+            expected = ((Slice) expected).toString(UTF_8);
         }
 
-        assertEquals(selectSingleValue(projection, compiler), expected);
+        Object actual = selectSingleValue(projection, compiler);
+        try {
+            assertEquals(actual, expected);
+        }
+        catch (Throwable e) {
+            throw e;
+        }
     }
 
     public void assertFunctionNull(String projection)
     {
         assertNull(selectSingleValue(projection, compiler));
+    }
+
+    public void assertInvalidFunction(String projection)
+    {
+        try {
+            assertFunction(projection, null);
+            fail();
+        }
+        catch (PrestoException e) {
+            assertEquals(e.getErrorCode(), INVALID_CAST_ARGUMENT.toErrorCode());
+        }
     }
 
     public void tryEvaluate(String expression)

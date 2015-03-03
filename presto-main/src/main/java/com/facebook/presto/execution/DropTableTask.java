@@ -19,7 +19,8 @@ import com.facebook.presto.metadata.QualifiedTableName;
 import com.facebook.presto.metadata.TableHandle;
 import com.facebook.presto.sql.analyzer.SemanticException;
 import com.facebook.presto.sql.tree.DropTable;
-import com.google.common.base.Optional;
+
+import java.util.Optional;
 
 import static com.facebook.presto.metadata.MetadataUtil.createQualifiedTableName;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISSING_TABLE;
@@ -28,7 +29,13 @@ public class DropTableTask
         implements DataDefinitionTask<DropTable>
 {
     @Override
-    public void execute(DropTable statement, Session session, Metadata metadata)
+    public String getName()
+    {
+        return "DROP TABLE";
+    }
+
+    @Override
+    public void execute(DropTable statement, Session session, Metadata metadata, QueryStateMachine stateMachine)
     {
         QualifiedTableName tableName = createQualifiedTableName(session, statement.getTableName());
 

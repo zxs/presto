@@ -20,14 +20,14 @@ import io.airlift.units.Duration;
 
 public interface QueryExecution
 {
+    QueryId getQueryId();
+
     QueryInfo getQueryInfo();
 
     Duration waitForStateChange(QueryState currentState, Duration maxWait)
             throws InterruptedException;
 
     void start();
-
-    void cancel();
 
     void fail(Throwable cause);
 

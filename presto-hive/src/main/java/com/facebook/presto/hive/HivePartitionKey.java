@@ -15,8 +15,8 @@ package com.facebook.presto.hive;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Function;
-import com.google.common.base.Objects;
+
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -74,7 +74,7 @@ public final class HivePartitionKey
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(name, hiveType, value);
+        return Objects.hash(name, hiveType, value);
     }
 
     @Override
@@ -87,20 +87,8 @@ public final class HivePartitionKey
             return false;
         }
         HivePartitionKey other = (HivePartitionKey) obj;
-        return Objects.equal(this.name, other.name) &&
-                Objects.equal(this.hiveType, other.hiveType) &&
-                Objects.equal(this.value, other.value);
-    }
-
-    public static Function<HivePartitionKey, String> nameGetter()
-    {
-        return new Function<HivePartitionKey, String>()
-        {
-            @Override
-            public String apply(HivePartitionKey input)
-            {
-                return input.getName();
-            }
-        };
+        return Objects.equals(this.name, other.name) &&
+                Objects.equals(this.hiveType, other.hiveType) &&
+                Objects.equals(this.value, other.value);
     }
 }

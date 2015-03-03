@@ -21,6 +21,7 @@ import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
+import io.airlift.units.MinDataSize;
 import io.airlift.units.MinDuration;
 
 import javax.validation.constraints.Min;
@@ -85,6 +86,12 @@ public class HiveClientConfig
     private List<String> resourceConfigFiles;
 
     private boolean optimizedReaderEnabled = true;
+
+    private boolean assumeCanonicalPartitionKeys;
+
+    private DataSize orcMaxMergeDistance = new DataSize(1, MEGABYTE);
+    private DataSize orcMaxBufferSize = new DataSize(8, MEGABYTE);
+    private DataSize orcStreamBufferSize = new DataSize(8, MEGABYTE);
 
     public int getMaxInitialSplits()
     {
@@ -567,8 +574,8 @@ public class HiveClientConfig
         return this;
     }
 
-    // TODO: add @MinDataSize(5MB) when supported in Airlift
     @NotNull
+    @MinDataSize("16MB")
     public DataSize getS3MultipartMinFileSize()
     {
         return s3MultipartMinFileSize;
@@ -582,8 +589,8 @@ public class HiveClientConfig
         return this;
     }
 
-    // TODO: add @MinDataSize(5MB) when supported in Airlift
     @NotNull
+    @MinDataSize("5MB")
     public DataSize getS3MultipartMinPartSize()
     {
         return s3MultipartMinPartSize;
@@ -608,6 +615,57 @@ public class HiveClientConfig
     public HiveClientConfig setOptimizedReaderEnabled(boolean optimizedReaderEnabled)
     {
         this.optimizedReaderEnabled = optimizedReaderEnabled;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getOrcMaxMergeDistance()
+    {
+        return orcMaxMergeDistance;
+    }
+
+    @Config("hive.orc.max-merge-distance")
+    public HiveClientConfig setOrcMaxMergeDistance(DataSize orcMaxMergeDistance)
+    {
+        this.orcMaxMergeDistance = orcMaxMergeDistance;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getOrcMaxBufferSize()
+    {
+        return orcMaxBufferSize;
+    }
+
+    @Config("hive.orc.max-buffer-size")
+    public HiveClientConfig setOrcMaxBufferSize(DataSize orcMaxBufferSize)
+    {
+        this.orcMaxBufferSize = orcMaxBufferSize;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getOrcStreamBufferSize()
+    {
+        return orcStreamBufferSize;
+    }
+
+    @Config("hive.orc.stream-buffer-size")
+    public HiveClientConfig setOrcStreamBufferSize(DataSize orcStreamBufferSize)
+    {
+        this.orcStreamBufferSize = orcStreamBufferSize;
+        return this;
+    }
+
+    public boolean isAssumeCanonicalPartitionKeys()
+    {
+        return assumeCanonicalPartitionKeys;
+    }
+
+    @Config("hive.assume-canonical-partition-keys")
+    public HiveClientConfig setAssumeCanonicalPartitionKeys(boolean assumeCanonicalPartitionKeys)
+    {
+        this.assumeCanonicalPartitionKeys = assumeCanonicalPartitionKeys;
         return this;
     }
 }

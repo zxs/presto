@@ -16,10 +16,11 @@ package com.facebook.presto.execution;
 import com.facebook.presto.spi.Range;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Objects;
-import com.google.common.base.Optional;
 
 import javax.annotation.concurrent.Immutable;
+
+import java.util.Objects;
+import java.util.Optional;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -55,8 +56,8 @@ public final class SimpleRange
     {
         checkNotNull(range, "range is null");
         return new SimpleRange(
-                Optional.fromNullable(SimpleMarker.fromMarker(range.getLow())),
-                Optional.fromNullable(SimpleMarker.fromMarker(range.getHigh())));
+                Optional.ofNullable(SimpleMarker.fromMarker(range.getLow())),
+                Optional.ofNullable(SimpleMarker.fromMarker(range.getHigh())));
     }
 
     @Override
@@ -71,14 +72,14 @@ public final class SimpleRange
 
         SimpleRange that = (SimpleRange) o;
 
-        return Objects.equal(this.low, that.low) &&
-                Objects.equal(this.high, that.high);
+        return Objects.equals(this.low, that.low) &&
+                Objects.equals(this.high, that.high);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(low, high);
+        return Objects.hash(low, high);
     }
 
     @Override

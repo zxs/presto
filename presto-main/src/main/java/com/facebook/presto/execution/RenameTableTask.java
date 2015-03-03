@@ -19,7 +19,8 @@ import com.facebook.presto.metadata.QualifiedTableName;
 import com.facebook.presto.metadata.TableHandle;
 import com.facebook.presto.sql.analyzer.SemanticException;
 import com.facebook.presto.sql.tree.RenameTable;
-import com.google.common.base.Optional;
+
+import java.util.Optional;
 
 import static com.facebook.presto.metadata.MetadataUtil.createQualifiedTableName;
 import static com.facebook.presto.sql.analyzer.SemanticErrorCode.MISSING_CATALOG;
@@ -30,7 +31,13 @@ public class RenameTableTask
         implements DataDefinitionTask<RenameTable>
 {
     @Override
-    public void execute(RenameTable statement, Session session, Metadata metadata)
+    public String getName()
+    {
+        return "RENAME TABLE";
+    }
+
+    @Override
+    public void execute(RenameTable statement, Session session, Metadata metadata, QueryStateMachine stateMachine)
     {
         QualifiedTableName tableName = createQualifiedTableName(session, statement.getSource());
         Optional<TableHandle> tableHandle = metadata.getTableHandle(session, tableName);

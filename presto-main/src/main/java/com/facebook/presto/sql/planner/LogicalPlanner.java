@@ -28,17 +28,18 @@ import com.facebook.presto.sql.planner.plan.OutputNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.TableCommitNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
-import com.google.common.base.Optional;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Optional;
 
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
-import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
+import static com.facebook.presto.spi.type.VarbinaryType.VARBINARY;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.CreateName;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.InsertReference;
 import static com.facebook.presto.sql.planner.plan.TableWriterNode.WriterTarget;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 public class LogicalPlanner
@@ -55,10 +56,10 @@ public class LogicalPlanner
             PlanNodeIdAllocator idAllocator,
             Metadata metadata)
     {
-        Preconditions.checkNotNull(session, "session is null");
-        Preconditions.checkNotNull(planOptimizers, "planOptimizers is null");
-        Preconditions.checkNotNull(idAllocator, "idAllocator is null");
-        Preconditions.checkNotNull(metadata, "metadata is null");
+        checkNotNull(session, "session is null");
+        checkNotNull(planOptimizers, "planOptimizers is null");
+        checkNotNull(idAllocator, "idAllocator is null");
+        checkNotNull(metadata, "metadata is null");
 
         this.session = session;
         this.planOptimizers = planOptimizers;
@@ -86,6 +87,7 @@ public class LogicalPlanner
 
         for (PlanOptimizer optimizer : planOptimizers) {
             root = optimizer.optimize(root, session, symbolAllocator.getTypes(), symbolAllocator, idAllocator);
+            checkNotNull(root, "%s returned a null plan", optimizer.getClass().getName());
         }
 
         // make sure we produce a valid plan after optimizations run. This is mainly to catch programming errors
@@ -125,14 +127,14 @@ public class LogicalPlanner
     {
         List<Symbol> writerOutputs = ImmutableList.of(
                 symbolAllocator.newSymbol("partialrows", BIGINT),
-                symbolAllocator.newSymbol("fragment", VARCHAR));
+                symbolAllocator.newSymbol("fragment", VARBINARY));
 
         TableWriterNode writerNode = new TableWriterNode(
                 idAllocator.getNextId(),
                 plan.getRoot(),
                 target,
                 plan.getOutputSymbols(),
-                getColumnNames(tableMetadata),
+                getVisibleColumnNames(tableMetadata),
                 writerOutputs,
                 plan.getSampleWeight());
 
@@ -144,7 +146,7 @@ public class LogicalPlanner
                 target,
                 outputs);
 
-        return new RelationPlan(commitNode, analysis.getOutputDescriptor(), outputs, Optional.<Symbol>absent());
+        return new RelationPlan(commitNode, analysis.getOutputDescriptor(), outputs, Optional.empty());
     }
 
     private PlanNode createOutputPlan(RelationPlan plan, Analysis analysis)
@@ -155,7 +157,7 @@ public class LogicalPlanner
         int columnNumber = 0;
         TupleDescriptor outputDescriptor = analysis.getOutputDescriptor();
         for (Field field : outputDescriptor.getVisibleFields()) {
-            String name = field.getName().or("_col" + columnNumber);
+            String name = field.getName().orElse("_col" + columnNumber);
             names.add(name);
 
             int fieldIndex = outputDescriptor.indexOf(field);
@@ -193,12 +195,11 @@ public class LogicalPlanner
         return columns.build();
     }
 
-    private static List<String> getColumnNames(TableMetadata tableMetadata)
+    private static List<String> getVisibleColumnNames(TableMetadata tableMetadata)
     {
-        ImmutableList.Builder<String> list = ImmutableList.builder();
-        for (ColumnMetadata column : tableMetadata.getColumns()) {
-            list.add(column.getName());
-        }
-        return list.build();
+        return tableMetadata.getColumns().stream()
+                .filter(column -> !column.isHidden())
+                .map(ColumnMetadata::getName)
+                .collect(toImmutableList());
     }
 }

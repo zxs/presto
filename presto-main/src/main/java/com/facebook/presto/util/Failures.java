@@ -20,21 +20,27 @@ import com.facebook.presto.spi.ErrorCode;
 import com.facebook.presto.spi.ErrorCodeSupplier;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.sql.parser.ParsingException;
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import javax.annotation.Nullable;
 
+import java.util.Collection;
 import java.util.List;
 
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static com.google.common.base.Functions.toStringFunction;
-import static com.google.common.collect.Iterables.transform;
 import static java.lang.String.format;
 import static java.util.Arrays.asList;
 
 public final class Failures
 {
+    private static final String NODE_CRASHED_ERROR = "The node may have crashed or be under too much load. " +
+            "This is probably a transient issue, so please retry your query in a few minutes.";
+
+    public static final String WORKER_NODE_ERROR = "Encountered too many errors talking to a worker node. " + NODE_CRASHED_ERROR;
+
+    public static final String WORKER_RESTARTED_ERROR = "A worker node running your query has restarted. " + NODE_CRASHED_ERROR;
+
     private Failures() {}
 
     public static ExecutionFailureInfo toFailure(Throwable failure)
@@ -75,21 +81,11 @@ public final class Failures
         }
     }
 
-    public static List<ExecutionFailureInfo> toFailures(Iterable<? extends Throwable> failures)
+    public static List<ExecutionFailureInfo> toFailures(Collection<? extends Throwable> failures)
     {
-        return ImmutableList.copyOf(transform(failures, toFailureFunction()));
-    }
-
-    private static Function<Throwable, ExecutionFailureInfo> toFailureFunction()
-    {
-        return new Function<Throwable, ExecutionFailureInfo>()
-        {
-            @Override
-            public ExecutionFailureInfo apply(Throwable throwable)
-            {
-                return toFailure(throwable);
-            }
-        };
+        return failures.stream()
+                .map(Failures::toFailure)
+                .collect(toImmutableList());
     }
 
     @Nullable

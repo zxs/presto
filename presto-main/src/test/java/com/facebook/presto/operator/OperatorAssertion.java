@@ -20,17 +20,16 @@ import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.testing.MaterializedResult;
-import com.facebook.presto.util.IterableTransformer;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 
 import static com.facebook.presto.operator.PageAssertions.assertPageEquals;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static io.airlift.testing.Assertions.assertEqualsIgnoreOrder;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
@@ -43,21 +42,18 @@ public final class OperatorAssertion
 
     public static List<Page> appendSampleWeight(List<Page> input, final int sampleWeight)
     {
-        return IterableTransformer.on(input).transform(new Function<Page, Page>()
-        {
-            @Override
-            public Page apply(Page page)
-            {
-                BlockBuilder builder = BIGINT.createBlockBuilder(new BlockBuilderStatus());
-                for (int i = 0; i < page.getPositionCount(); i++) {
-                    BIGINT.writeLong(builder, sampleWeight);
-                }
-                Block[] blocks = new Block[page.getChannelCount() + 1];
-                System.arraycopy(page.getBlocks(), 0, blocks, 0, page.getChannelCount());
-                blocks[blocks.length - 1] = builder.build();
-                return new Page(blocks);
-            }
-        }).list();
+        return input.stream()
+                .map(page -> {
+                    BlockBuilder builder = BIGINT.createBlockBuilder(new BlockBuilderStatus());
+                    for (int i = 0; i < page.getPositionCount(); i++) {
+                        BIGINT.writeLong(builder, sampleWeight);
+                    }
+                    Block[] blocks = new Block[page.getChannelCount() + 1];
+                    System.arraycopy(page.getBlocks(), 0, blocks, 0, page.getChannelCount());
+                    blocks[blocks.length - 1] = builder.build();
+                    return new Page(blocks);
+                })
+                .collect(toImmutableList());
     }
 
     public static List<Page> toPages(Operator operator, Iterator<Page> input)
@@ -184,10 +180,6 @@ public final class OperatorAssertion
         assertOperatorEquals(operator, input, expected, false, ImmutableList.<Integer>of());
     }
 
-//    public static void assertOperatorEquals(Operator operator, List<Page> input, MaterializedResult expected, boolean hashEnabled, Optional<Integer> hashChannel)
-//    {
-//        assertOperatorEquals();
-//    }
     public static void assertOperatorEquals(Operator operator, List<Page> input, MaterializedResult expected, boolean hashEnabled, List<Integer> hashChannels)
     {
         List<Page> pages = toPages(operator, input);
@@ -206,7 +198,7 @@ public final class OperatorAssertion
 
     public static void assertOperatorEqualsIgnoreOrder(Operator operator, List<Page> input, MaterializedResult expected)
     {
-        assertOperatorEqualsIgnoreOrder(operator, input, expected, false, Optional.<Integer>absent());
+        assertOperatorEqualsIgnoreOrder(operator, input, expected, false, Optional.empty());
     }
 
     public static void assertOperatorEqualsIgnoreOrder(Operator operator, List<Page> input, MaterializedResult expected, boolean hashEnabled, Optional<Integer> hashChannel)
@@ -253,7 +245,7 @@ public final class OperatorAssertion
 
     static List<Page> dropChannel(List<Page> pages, List<Integer> channels)
     {
-        List<Page> actualPages = new ArrayList();
+        List<Page> actualPages = new ArrayList<>();
         for (Page page : pages) {
             int channel = 0;
             Block[] blocks = new Block[page.getChannelCount() - channels.size()];

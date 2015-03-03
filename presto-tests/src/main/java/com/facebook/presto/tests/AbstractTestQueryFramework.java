@@ -77,7 +77,12 @@ public abstract class AbstractTestQueryFramework
 
     protected MaterializedResult computeActual(@Language("SQL") String sql)
     {
-        return queryRunner.execute(getSession(), sql).toJdbcTypes();
+        return computeActual(getSession(), sql);
+    }
+
+    protected MaterializedResult computeActual(Session session, @Language("SQL") String sql)
+    {
+        return queryRunner.execute(session, sql).toJdbcTypes();
     }
 
     protected void assertQuery(@Language("SQL") String sql)
@@ -101,7 +106,13 @@ public abstract class AbstractTestQueryFramework
     protected void assertQueryOrdered(@Language("SQL") String actual, @Language("SQL") String expected)
             throws Exception
     {
-        QueryAssertions.assertQuery(queryRunner, getSession(), actual, h2QueryRunner, expected, true);
+        assertQueryOrdered(getSession(), actual, expected);
+    }
+
+    protected void assertQueryOrdered(Session session, @Language("SQL") String actual, @Language("SQL") String expected)
+            throws Exception
+    {
+        QueryAssertions.assertQuery(queryRunner, session, actual, h2QueryRunner, expected, true);
     }
 
     protected void assertQueryTrue(@Language("SQL") String sql)
@@ -122,7 +133,7 @@ public abstract class AbstractTestQueryFramework
 
     protected MaterializedResult computeExpected(@Language("SQL") String sql, List<? extends Type> resultTypes)
     {
-        return h2QueryRunner.execute(sql, resultTypes);
+        return h2QueryRunner.execute(getSession(), sql, resultTypes);
     }
 
     public Function<MaterializedRow, String> onlyColumnGetter()
@@ -159,8 +170,6 @@ public abstract class AbstractTestQueryFramework
                 optimizers,
                 metadata,
                 sqlParser,
-                featuresConfig.isExperimentalSyntaxEnabled(),
-                featuresConfig.isDistributedIndexJoinsEnabled(),
-                featuresConfig.isDistributedJoinsEnabled());
+                featuresConfig.isExperimentalSyntaxEnabled());
     }
 }

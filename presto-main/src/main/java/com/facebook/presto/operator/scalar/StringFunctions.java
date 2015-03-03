@@ -14,10 +14,11 @@
 package com.facebook.presto.operator.scalar;
 
 import com.facebook.presto.operator.Description;
+import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.type.SqlType;
 import com.google.common.base.Ascii;
-import com.google.common.base.Charsets;
+import com.google.common.primitives.Ints;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 
@@ -26,20 +27,32 @@ import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static com.facebook.presto.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
+import static com.facebook.presto.util.Failures.checkCondition;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public final class StringFunctions
 {
     private StringFunctions() {}
 
-    @Description("convert unicode code point to a string")
+    @Description("convert Unicode code point to a string")
     @ScalarFunction
     @SqlType(StandardTypes.VARCHAR)
     public static Slice chr(@SqlType(StandardTypes.BIGINT) long codepoint)
     {
-        char[] utf16 = Character.toChars((int) codepoint);
-        ByteBuffer utf8 = Charsets.UTF_8.encode(CharBuffer.wrap(utf16));
+        char[] utf16 = codePointChars(codepoint);
+        ByteBuffer utf8 = UTF_8.encode(CharBuffer.wrap(utf16));
         return Slices.wrappedBuffer(utf8.array(), 0, utf8.limit());
+    }
+
+    private static char[] codePointChars(long codepoint)
+    {
+        try {
+            return Character.toChars(Ints.checkedCast(codepoint));
+        }
+        catch (IllegalArgumentException e) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "Not a valid Unicode code point: " + codepoint);
+        }
     }
 
     @Description("concatenates given strings")
@@ -74,10 +87,10 @@ public final class StringFunctions
     @SqlType(StandardTypes.VARCHAR)
     public static Slice replace(@SqlType(StandardTypes.VARCHAR) Slice str, @SqlType(StandardTypes.VARCHAR) Slice search, @SqlType(StandardTypes.VARCHAR) Slice replace)
     {
-        String replaced = str.toString(Charsets.UTF_8).replace(
-                search.toString(Charsets.UTF_8),
-                replace.toString(Charsets.UTF_8));
-        return Slices.copiedBuffer(replaced, Charsets.UTF_8);
+        String replaced = str.toString(UTF_8).replace(
+                search.toString(UTF_8),
+                replace.toString(UTF_8));
+        return Slices.copiedBuffer(replaced, UTF_8);
     }
 
     @Description("reverses the given string")
@@ -157,7 +170,7 @@ public final class StringFunctions
     @SqlType(StandardTypes.VARCHAR)
     public static Slice splitPart(@SqlType(StandardTypes.VARCHAR) Slice string, @SqlType(StandardTypes.VARCHAR) Slice delimiter, @SqlType(StandardTypes.BIGINT) long index)
     {
-        checkArgument(index > 0, "Index must be greater than zero");
+        checkCondition(index > 0, INVALID_FUNCTION_ARGUMENT, "Index must be greater than zero");
 
         if (delimiter.length() == 0) {
             if (index > string.length()) {
@@ -267,21 +280,5 @@ public final class StringFunctions
             upper.setByte(i, Ascii.toUpperCase((char) slice.getByte(i)));
         }
         return upper;
-    }
-
-    @Description("get the largest of the given values")
-    @ScalarFunction
-    @SqlType(StandardTypes.VARCHAR)
-    public static Slice greatest(@SqlType(StandardTypes.VARCHAR) Slice value1, @SqlType(StandardTypes.VARCHAR) Slice value2)
-    {
-        return value1.compareTo(value2) > 0 ? value1 : value2;
-    }
-
-    @Description("get the smallest of the given values")
-    @ScalarFunction
-    @SqlType(StandardTypes.VARCHAR)
-    public static Slice least(@SqlType(StandardTypes.VARCHAR) Slice value1, @SqlType(StandardTypes.VARCHAR) Slice value2)
-    {
-        return value1.compareTo(value2) < 0 ? value1 : value2;
     }
 }

@@ -13,8 +13,8 @@
  */
 package com.facebook.presto.tpch;
 
-import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.ConnectorColumnHandle;
+import com.facebook.presto.spi.type.Type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -76,7 +76,7 @@ public class TpchColumnHandle
         if (fieldIndex != that.fieldIndex) {
             return false;
         }
-        if (type != that.type) {
+        if (!type.equals(that.type)) {
             return false;
         }
 

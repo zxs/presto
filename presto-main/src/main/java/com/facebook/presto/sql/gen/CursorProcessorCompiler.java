@@ -24,8 +24,8 @@ import com.facebook.presto.byteCode.control.IfStatement;
 import com.facebook.presto.byteCode.instruction.LabelNode;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.operator.CursorProcessor;
-import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.ConnectorSession;
+import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.type.Type;
@@ -134,31 +134,29 @@ public class CursorProcessorCompiler
 
         Block trueBlock = new Block(context);
         ifStatement.ifTrue(trueBlock);
-        if (projections == 0) {
-            // pageBuilder.declarePosition();
+
+        // pageBuilder.declarePosition();
+        trueBlock.getVariable(pageBuilderVariable)
+                .invokeVirtual(PageBuilder.class, "declarePosition", void.class);
+
+        // this.project_43(session, cursor, pageBuilder.getBlockBuilder(42)));
+        for (int projectionIndex = 0; projectionIndex < projections; projectionIndex++) {
+            trueBlock.pushThis()
+                    .getVariable(sessionVariable)
+                    .getVariable(cursorVariable);
+
+            // pageBuilder.getBlockBuilder(0)
             trueBlock.getVariable(pageBuilderVariable)
-                    .invokeVirtual(PageBuilder.class, "declarePosition", void.class);
-        }
-        else {
-            // this.project_43(session, cursor, pageBuilder.getBlockBuilder(42)));
-            for (int projectionIndex = 0; projectionIndex < projections; projectionIndex++) {
-                trueBlock.pushThis()
-                        .getVariable(sessionVariable)
-                        .getVariable(cursorVariable);
+                    .push(projectionIndex)
+                    .invokeVirtual(PageBuilder.class, "getBlockBuilder", BlockBuilder.class, int.class);
 
-                // pageBuilder.getBlockBuilder(0)
-                trueBlock.getVariable(pageBuilderVariable)
-                        .push(projectionIndex)
-                        .invokeVirtual(PageBuilder.class, "getBlockBuilder", BlockBuilder.class, int.class);
-
-                // project(block..., blockBuilder)
-                trueBlock.invokeVirtual(classDefinition.getType(),
-                        "project_" + projectionIndex,
-                        type(void.class),
-                        type(ConnectorSession.class),
-                        type(RecordCursor.class),
-                        type(BlockBuilder.class));
-            }
+            // project(block..., blockBuilder)
+            trueBlock.invokeVirtual(classDefinition.getType(),
+                    "project_" + projectionIndex,
+                    type(void.class),
+                    type(ConnectorSession.class),
+                    type(RecordCursor.class),
+                    type(BlockBuilder.class));
         }
         forLoopBody.append(ifStatement.build());
 

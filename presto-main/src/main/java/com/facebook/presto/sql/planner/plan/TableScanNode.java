@@ -17,13 +17,11 @@ import com.facebook.presto.metadata.ColumnHandle;
 import com.facebook.presto.metadata.Partition;
 import com.facebook.presto.metadata.TableHandle;
 import com.facebook.presto.spi.TupleDomain;
+import com.facebook.presto.sql.planner.DomainUtils;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.tree.Expression;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Function;
-import com.google.common.base.Objects;
-import com.google.common.base.Optional;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -35,9 +33,10 @@ import javax.annotation.concurrent.Immutable;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 import static com.facebook.presto.sql.planner.DomainUtils.columnHandleToSymbol;
-import static com.facebook.presto.sql.planner.DomainUtils.simplifyDomainFunction;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -80,7 +79,7 @@ public class TableScanNode
             @JsonProperty("assignments") Map<Symbol, ColumnHandle> assignments,
             @JsonProperty("originalConstraint") @Nullable Expression originalConstraint)
     {
-        this(id, table, outputSymbols, assignments, originalConstraint, new SummarizedPartition(Optional.<GeneratedPartitions>absent()), true);
+        this(id, table, outputSymbols, assignments, originalConstraint, new SummarizedPartition(Optional.empty()), true);
     }
 
     private TableScanNode(PlanNodeId id, TableHandle table, List<Symbol> outputSymbols, Map<Symbol, ColumnHandle> assignments, @Nullable Expression originalConstraint, SummarizedPartition summarizedPartition, boolean partitionsDroppedBySerialization)
@@ -159,7 +158,7 @@ public class TableScanNode
             builder.append("NONE");
         }
         else {
-            builder.append(Maps.transformValues(columnHandleToSymbol(summarizedPartition.getPartitionDomainSummary().getDomains(), assignments), simplifyDomainFunction()));
+            builder.append(Maps.transformValues(columnHandleToSymbol(summarizedPartition.getPartitionDomainSummary().getDomains(), assignments), DomainUtils::simplifyDomain));
         }
         return builder.toString();
     }
@@ -188,19 +187,7 @@ public class TableScanNode
 
         }
 
-        private static Function<Partition, TupleDomain<ColumnHandle>> tupleDomainGetter()
-        {
-            return new Function<Partition, TupleDomain<ColumnHandle>>()
-            {
-                @Override
-                public TupleDomain<ColumnHandle> apply(Partition partition)
-                {
-                    return partition.getTupleDomain();
-                }
-            };
-        }
-
-            private static TupleDomain<ColumnHandle> computePartitionsDomainSummary(Optional<GeneratedPartitions> generatedPartitions)
+        private static TupleDomain<ColumnHandle> computePartitionsDomainSummary(Optional<GeneratedPartitions> generatedPartitions)
         {
             if (!generatedPartitions.isPresent()) {
                 return TupleDomain.all();
@@ -210,7 +197,7 @@ public class TableScanNode
                 return TupleDomain.none();
             }
 
-            List<TupleDomain<ColumnHandle>> domains = FluentIterable.from(generatedPartitions.get().getPartitions()).transform(tupleDomainGetter()).toList();
+            List<TupleDomain<ColumnHandle>> domains = FluentIterable.from(generatedPartitions.get().getPartitions()).transform(Partition::getTupleDomain).toList();
             return TupleDomain.columnWiseUnion(domains);
         }
 
@@ -249,7 +236,7 @@ public class TableScanNode
         @Override
         public int hashCode()
         {
-            return Objects.hashCode(tupleDomainInput, partitions);
+            return Objects.hash(tupleDomainInput, partitions);
         }
 
         @Override
@@ -261,8 +248,9 @@ public class TableScanNode
             if (obj == null || getClass() != obj.getClass()) {
                 return false;
             }
-            final GeneratedPartitions other = (GeneratedPartitions) obj;
-            return Objects.equal(this.tupleDomainInput, other.tupleDomainInput) && Objects.equal(this.partitions, other.partitions);
+            GeneratedPartitions other = (GeneratedPartitions) obj;
+            return Objects.equals(this.tupleDomainInput, other.tupleDomainInput) &&
+                    Objects.equals(this.partitions, other.partitions);
         }
     }
 }

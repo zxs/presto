@@ -14,6 +14,7 @@
 package com.facebook.presto.connector.system;
 
 import com.facebook.presto.metadata.Metadata;
+import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.InMemoryRecordSet;
 import com.facebook.presto.spi.InMemoryRecordSet.Builder;
@@ -22,13 +23,13 @@ import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.SystemTable;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
-import com.google.inject.Inject;
+
+import javax.inject.Inject;
 
 import java.util.List;
 import java.util.Map;
 
 import static com.facebook.presto.metadata.MetadataUtil.TableMetadataBuilder.tableMetadataBuilder;
-import static com.facebook.presto.metadata.MetadataUtil.columnTypeGetter;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.transform;
@@ -65,7 +66,7 @@ public class CatalogSystemTable
     @Override
     public List<Type> getColumnTypes()
     {
-        return ImmutableList.copyOf(transform(CATALOG_TABLE.getColumns(), columnTypeGetter()));
+        return ImmutableList.copyOf(transform(CATALOG_TABLE.getColumns(), ColumnMetadata::getType));
     }
 
     @Override

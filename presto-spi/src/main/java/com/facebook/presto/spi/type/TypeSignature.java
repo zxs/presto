@@ -127,8 +127,8 @@ public class TypeSignature
             char c = signature.charAt(i);
             if (c == '<') {
                 if (bracketCount == 0) {
-                    checkState(baseName == null, "Expected baseName to be null");
-                    checkState(parameterStart == -1, "Expected parameter start to be -1");
+                    verify(baseName == null, "Expected baseName to be null");
+                    verify(parameterStart == -1, "Expected parameter start to be -1");
                     baseName = signature.substring(0, i);
                     parameterStart = i + 1;
                 }
@@ -163,8 +163,8 @@ public class TypeSignature
                 inLiteralParameters = true;
                 if (bracketCount == 0) {
                     if (baseName == null) {
-                        checkState(parameters.isEmpty(), "Expected no parameters");
-                        checkState(parameterStart == -1, "Expected parameter start to be -1");
+                        verify(parameters.isEmpty(), "Expected no parameters");
+                        verify(parameterStart == -1, "Expected parameter start to be -1");
                         baseName = signature.substring(0, i);
                     }
                     parameterStart = i + 1;
@@ -209,13 +209,14 @@ public class TypeSignature
         TypeSignature other = (TypeSignature) o;
 
         return Objects.equals(this.base.toLowerCase(Locale.ENGLISH), other.base.toLowerCase(Locale.ENGLISH)) &&
-                Objects.equals(this.parameters, other.parameters);
+                Objects.equals(this.parameters, other.parameters) &&
+                Objects.equals(this.literalParameters, other.literalParameters);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(base.toLowerCase(Locale.ENGLISH), parameters);
+        return Objects.hash(base.toLowerCase(Locale.ENGLISH), parameters, literalParameters);
     }
 
     private static void checkArgument(boolean argument, String format, Object...args)
@@ -225,10 +226,10 @@ public class TypeSignature
         }
     }
 
-    private static void checkState(boolean argument, String format, Object...args)
+    private static void verify(boolean argument, String message)
     {
         if (!argument) {
-            throw new IllegalStateException(format(format, args));
+            throw new AssertionError(message);
         }
     }
 }

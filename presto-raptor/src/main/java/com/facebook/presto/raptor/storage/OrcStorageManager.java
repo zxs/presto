@@ -22,89 +22,92 @@ import com.facebook.presto.orc.TupleDomainOrcPredicate;
 import com.facebook.presto.orc.TupleDomainOrcPredicate.ColumnReference;
 import com.facebook.presto.orc.metadata.OrcMetadataReader;
 import com.facebook.presto.raptor.RaptorColumnHandle;
+import com.facebook.presto.raptor.metadata.ColumnStats;
+import com.facebook.presto.raptor.metadata.ShardInfo;
+import com.facebook.presto.raptor.util.CurrentNodeId;
 import com.facebook.presto.spi.ConnectorPageSource;
+import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.spi.type.VarbinaryType;
-import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
-import com.google.common.collect.FluentIterable;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import io.airlift.log.Logger;
-import io.airlift.slice.Slice;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import javax.inject.Inject;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static com.facebook.presto.raptor.RaptorErrorCode.RAPTOR_ERROR;
-import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
+import static com.facebook.presto.raptor.RaptorErrorCode.RAPTOR_RECOVERY_ERROR;
+import static com.facebook.presto.raptor.storage.ShardStats.computeColumnStats;
+import static com.facebook.presto.raptor.util.FileUtil.copyFile;
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static io.airlift.units.DataSize.Unit.BYTE;
-import static io.airlift.units.Duration.nanosSince;
-import static java.nio.file.Files.createDirectories;
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
-import static java.util.Locale.ENGLISH;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.joda.time.DateTimeZone.UTC;
 
 public class OrcStorageManager
         implements StorageManager
 {
-    private static final Logger log = Logger.get(OrcStorageManager.class);
-
-    private final File baseStorageDir;
-    private final File baseStagingDir;
-    private final Optional<File> baseBackupDir;
+    private final String nodeId;
+    private final StorageService storageService;
+    private final DataSize orcMaxMergeDistance;
+    private final ShardRecoveryManager recoveryManager;
+    private final Duration recoveryTimeout;
+    private final long rowsPerShard;
+    private final DataSize maxBufferSize;
 
     @Inject
-    public OrcStorageManager(StorageManagerConfig config)
+    public OrcStorageManager(
+            CurrentNodeId currentNodeId,
+            StorageService storageService,
+            StorageManagerConfig config,
+            ShardRecoveryManager recoveryManager)
     {
-        this(config.getDataDirectory(), Optional.fromNullable(config.getBackupDirectory()));
+        this(currentNodeId.toString(),
+                storageService,
+                config.getOrcMaxMergeDistance(),
+                recoveryManager,
+                config.getShardRecoveryTimeout(),
+                config.getRowsPerShard(),
+                config.getMaxBufferSize());
     }
 
-    public OrcStorageManager(File dataDirectory, Optional<File> backupDirectory)
+    public OrcStorageManager(
+            String nodeId,
+            StorageService storageService,
+            DataSize orcMaxMergeDistance,
+            ShardRecoveryManager recoveryManager,
+            Duration shardRecoveryTimeout,
+            long rowsPerShard,
+            DataSize maxBufferSize)
     {
-        File baseDataDir = checkNotNull(dataDirectory, "dataDirectory is null");
-        this.baseStorageDir = new File(baseDataDir, "storage");
-        this.baseStagingDir = new File(baseDataDir, "staging");
-        this.baseBackupDir = checkNotNull(backupDirectory, "backupDirectory is null");
-    }
+        this.nodeId = checkNotNull(nodeId, "nodeId is null");
+        this.storageService = checkNotNull(storageService, "storageService is null");
+        this.orcMaxMergeDistance = checkNotNull(orcMaxMergeDistance, "orcMaxMergeDistance is null");
+        this.recoveryManager = checkNotNull(recoveryManager, "recoveryManager is null");
+        this.recoveryTimeout = checkNotNull(shardRecoveryTimeout, "shardRecoveryTimeout is null");
 
-    @PostConstruct
-    public void start()
-            throws IOException
-    {
-        deleteDirectory(baseStagingDir);
-        createParents(baseStagingDir);
-        createParents(baseStorageDir);
-
-        if (baseBackupDir.isPresent()) {
-            createParents(baseBackupDir.get());
-        }
-    }
-
-    @PreDestroy
-    public void stop()
-            throws IOException
-    {
-        deleteDirectory(baseStagingDir);
+        checkArgument(rowsPerShard > 0, "rowsPerShard must be > 0");
+        this.rowsPerShard = rowsPerShard;
+        this.maxBufferSize = checkNotNull(maxBufferSize, "maxBufferSize is null");
     }
 
     @Override
@@ -131,12 +134,7 @@ public class OrcStorageManager
 
             OrcPredicate predicate = getPredicate(effectivePredicate, indexMap);
 
-            OrcRecordReader recordReader = reader.createRecordReader(
-                    includedColumns.build(),
-                    predicate,
-                    0,
-                    dataSource.getSize(),
-                    UTC);
+            OrcRecordReader recordReader = reader.createRecordReader(includedColumns.build(), predicate, UTC);
 
             return new OrcPageSource(recordReader, dataSource, columnIds, columnTypes, columnIndexes.build());
         }
@@ -147,34 +145,22 @@ public class OrcStorageManager
             catch (IOException ex) {
                 e.addSuppressed(ex);
             }
-            throw new PrestoException(RAPTOR_ERROR, "Failed to create page source", e);
+            throw new PrestoException(RAPTOR_ERROR, "Failed to create page source for shard " + shardUuid, e);
         }
     }
 
-    @SuppressWarnings("resource")
     @Override
-    public OutputHandle createOutputHandle(List<Long> columnIds, List<Type> columnTypes, Optional<Long> sampleWeightColumnId)
+    public StoragePageSink createStoragePageSink(List<Long> columnIds, List<Type> columnTypes)
     {
-        List<StorageType> storageTypes = toStorageTypes(columnTypes);
-
-        UUID shardUuid = UUID.randomUUID();
-        File stagingFile = getStagingFile(shardUuid);
-        createParents(stagingFile);
-
-        RowSink rowSink = new OrcRowSink(columnIds, storageTypes, sampleWeightColumnId, stagingFile);
-
-        return new OutputHandle(shardUuid, rowSink);
+        return new OrcStoragePageSink(columnIds, columnTypes);
     }
 
-    @Override
-    public void commit(OutputHandle outputHandle)
+    private void writeShard(UUID shardUuid)
     {
-        outputHandle.getRowSink().close();
+        File stagingFile = storageService.getStagingFile(shardUuid);
+        File storageFile = storageService.getStorageFile(shardUuid);
 
-        File stagingFile = getStagingFile(outputHandle.getShardUuid());
-        File storageFile = getStorageFile(outputHandle.getShardUuid());
-
-        createParents(storageFile);
+        storageService.createParents(storageFile);
 
         try {
             Files.move(stagingFile.toPath(), storageFile.toPath(), ATOMIC_MOVE);
@@ -183,11 +169,11 @@ public class OrcStorageManager
             throw new PrestoException(RAPTOR_ERROR, "Failed to move shard file", e);
         }
 
-        if (baseBackupDir.isPresent()) {
-            File backupFile = getBackupFile(outputHandle.getShardUuid());
-            createParents(backupFile);
+        if (isBackupAvailable()) {
+            File backupFile = storageService.getBackupFile(shardUuid);
+            storageService.createParents(backupFile);
             try {
-                Files.copy(storageFile.toPath(), backupFile.toPath());
+                copyFile(storageFile.toPath(), backupFile.toPath());
             }
             catch (IOException e) {
                 throw new PrestoException(RAPTOR_ERROR, "Failed to create backup shard file", e);
@@ -196,82 +182,66 @@ public class OrcStorageManager
     }
 
     @Override
+    public long getMaxRowCount()
+    {
+        return rowsPerShard;
+    }
+
+    @Override
+    public DataSize getMaxBufferSize()
+    {
+        return maxBufferSize;
+    }
+
+    @Override
     public boolean isBackupAvailable()
     {
-        return baseBackupDir.isPresent();
-    }
-
-    @VisibleForTesting
-    File getStorageFile(UUID shardUuid)
-    {
-        return getFileSystemPath(baseStorageDir, shardUuid);
-    }
-
-    @VisibleForTesting
-    File getStagingFile(UUID shardUuid)
-    {
-        String name = getFileSystemPath(new File("/"), shardUuid).getName();
-        return new File(baseStagingDir, name);
-    }
-
-    @VisibleForTesting
-    File getBackupFile(UUID shardUuid)
-    {
-        checkState(baseBackupDir.isPresent(), "backup directory not set");
-        return getFileSystemPath(baseBackupDir.get(), shardUuid);
+        return storageService.isBackupAvailable();
     }
 
     @VisibleForTesting
     OrcDataSource openShard(UUID shardUuid)
     {
-        File file = getStorageFile(shardUuid).getAbsoluteFile();
+        File file = storageService.getStorageFile(shardUuid).getAbsoluteFile();
 
-        if (!file.exists() && baseBackupDir.isPresent()) {
-            restoreFromBackup(shardUuid, file);
+        if (!file.exists() && storageService.isBackupAvailable(shardUuid)) {
+            try {
+                Future<?> future = recoveryManager.recoverShard(shardUuid);
+                future.get(recoveryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw Throwables.propagate(e);
+            }
+            catch (ExecutionException e) {
+                throw new PrestoException(RAPTOR_RECOVERY_ERROR, "Error recovering shard " + shardUuid, e.getCause());
+            }
+            catch (TimeoutException e) {
+                throw new PrestoException(RAPTOR_ERROR, "Shard is being recovered from backup. Please retry in a few minutes: " + shardUuid);
+            }
         }
 
         try {
-            return new FileOrcDataSource(file);
+            return new FileOrcDataSource(file, orcMaxMergeDistance);
         }
         catch (IOException e) {
             throw new PrestoException(RAPTOR_ERROR, "Failed to open shard file: " + file, e);
         }
     }
 
-    private void restoreFromBackup(UUID shardUuid, File file)
+    private List<ColumnStats> computeShardStats(File file, List<Long> columnIds, List<Type> types)
     {
-        File backupFile = getBackupFile(shardUuid);
+        try (OrcDataSource dataSource = new FileOrcDataSource(file, orcMaxMergeDistance)) {
+            OrcReader reader = new OrcReader(dataSource, new OrcMetadataReader());
 
-        // create a temporary file in the staging directory
-        File stagingFile = temporarySuffix(getStagingFile(shardUuid));
-        createParents(stagingFile);
-
-        // copy to temporary file
-        log.info("Copying shard %s from backup...", shardUuid);
-        long start = System.nanoTime();
-
-        try {
-            Files.copy(backupFile.toPath(), stagingFile.toPath());
+            ImmutableList.Builder<ColumnStats> list = ImmutableList.builder();
+            for (int i = 0; i < columnIds.size(); i++) {
+                computeColumnStats(reader, columnIds.get(i), types.get(i)).ifPresent(list::add);
+            }
+            return list.build();
         }
         catch (IOException e) {
-            throw new PrestoException(RAPTOR_ERROR, "Failed to copy backup shard file: " + backupFile, e);
-        }
-
-        Duration duration = nanosSince(start);
-        DataSize size = new DataSize(stagingFile.length(), BYTE);
-        DataSize rate = dataRate(size, duration);
-        log.info("Copied shard %s from backup in %s (%s at %s/s)", shardUuid, duration, size, rate);
-
-        // move to final location
-        createParents(file);
-        try {
-            Files.move(stagingFile.toPath(), file.toPath(), ATOMIC_MOVE);
-        }
-        catch (FileAlreadyExistsException e) {
-            // someone else already created it (should not happen, but safe to ignore)
-        }
-        catch (IOException e) {
-            throw new PrestoException(RAPTOR_ERROR, "Failed to move shard file", e);
+            throw new PrestoException(RAPTOR_ERROR, "Failed to read file: " + file, e);
         }
     }
 
@@ -296,107 +266,78 @@ public class OrcStorageManager
         return map.build();
     }
 
-    private static File temporarySuffix(File file)
+    private class OrcStoragePageSink
+            implements StoragePageSink
     {
-        return new File(file.getPath() + ".tmp-" + UUID.randomUUID());
-    }
+        private final List<Long> columnIds;
+        private final List<Type> columnTypes;
 
-    private static void createParents(File file)
-    {
-        File dir = file.getParentFile();
-        try {
-            createDirectories(dir.toPath());
-        }
-        catch (IOException e) {
-            throw new PrestoException(RAPTOR_ERROR, "Failed creating directories: " + dir, e);
-        }
-    }
+        private final List<ShardInfo> shards = new ArrayList<>();
 
-    private static List<StorageType> toStorageTypes(List<Type> columnTypes)
-    {
-        return FluentIterable.from(columnTypes)
-                .transform(new Function<Type, StorageType>()
-                {
-                    @Override
-                    public StorageType apply(Type type)
-                    {
-                        return toStorageType(type);
-                    }
-                })
-                .toList();
-    }
+        private boolean committed;
+        private OrcFileWriter writer;
+        private UUID shardUuid;
 
-    private static StorageType toStorageType(Type type)
-    {
-        Class<?> javaType = type.getJavaType();
-        if (javaType == boolean.class) {
-            return StorageType.BOOLEAN;
+        public OrcStoragePageSink(List<Long> columnIds, List<Type> columnTypes)
+        {
+            this.columnIds = ImmutableList.copyOf(checkNotNull(columnIds, "columnIds is null"));
+            this.columnTypes = ImmutableList.copyOf(checkNotNull(columnTypes, "columnTypes is null"));
         }
-        if (javaType == long.class) {
-            return StorageType.LONG;
+
+        @Override
+        public void appendPages(List<Page> pages)
+        {
+            createWriterIfNecessary();
+            writer.appendPages(pages);
         }
-        if (javaType == double.class) {
-            return StorageType.DOUBLE;
+
+        @Override
+        public void appendPages(List<Page> inputPages, int[] pageIndexes, int[] positionIndexes)
+        {
+            createWriterIfNecessary();
+            writer.appendPages(inputPages, pageIndexes, positionIndexes);
         }
-        if (javaType == Slice.class) {
-            if (type.equals(VarcharType.VARCHAR)) {
-                return StorageType.STRING;
+
+        @Override
+        public void flush()
+        {
+            if (writer != null) {
+                writer.close();
+
+                File stagingFile = storageService.getStagingFile(shardUuid);
+                List<ColumnStats> columns = computeShardStats(stagingFile, columnIds, columnTypes);
+                Set<String> nodes = ImmutableSet.of(nodeId);
+                long rowCount = writer.getRowCount();
+                long dataSize = stagingFile.length();
+
+                shards.add(new ShardInfo(shardUuid, nodes, columns, rowCount, dataSize));
+
+                writer = null;
+                shardUuid = null;
             }
-            if (type.equals(VarbinaryType.VARBINARY)) {
-                return StorageType.BYTES;
+        }
+
+        @Override
+        public List<ShardInfo> commit()
+        {
+            checkState(!committed, "already committed");
+            committed = true;
+
+            flush();
+            for (ShardInfo shard : shards) {
+                writeShard(shard.getShardUuid());
+            }
+            return ImmutableList.copyOf(shards);
+        }
+
+        private void createWriterIfNecessary()
+        {
+            if (writer == null) {
+                shardUuid = UUID.randomUUID();
+                File stagingFile = storageService.getStagingFile(shardUuid);
+                storageService.createParents(stagingFile);
+                writer = new OrcFileWriter(columnIds, columnTypes, stagingFile);
             }
         }
-        throw new PrestoException(NOT_SUPPORTED, "No storage type for type: " + type);
-    }
-
-    /**
-     * Generate a file system path for a shard UUID.
-     * <p/>
-     * This creates a three level deep directory structure where the first
-     * two levels each contain three hex digits (lowercase) of the UUID
-     * and the final level contains the full UUID.
-     * Example:
-     * <p/>
-     * <pre>
-     * UUID: 701e1a79-74f7-4f56-b438-b41e8e7d019d
-     * Path: /base/701/e1a/701e1a79-74f7-4f56-b438-b41e8e7d019d.orc
-     * </pre>
-     * <p/>
-     * This ensures that files are spread out evenly through the tree
-     * while a path can still be easily navigated by a human being.
-     */
-    private static File getFileSystemPath(File base, UUID shardUuid)
-    {
-        String uuid = shardUuid.toString().toLowerCase(ENGLISH);
-        return base.toPath()
-                .resolve(uuid.substring(0, 3))
-                .resolve(uuid.substring(3, 6))
-                .resolve(uuid + ".orc")
-                .toFile();
-    }
-
-    private static void deleteDirectory(File dir)
-            throws IOException
-    {
-        if (!dir.exists()) {
-            return;
-        }
-        File[] files = dir.listFiles();
-        if (files == null) {
-            throw new IOException("Failed to list directory: " + dir);
-        }
-        for (File file : files) {
-            Files.delete(file.toPath());
-        }
-        Files.delete(dir.toPath());
-    }
-
-    private static DataSize dataRate(DataSize size, Duration duration)
-    {
-        double rate = size.toBytes() / duration.getValue(SECONDS);
-        if (Double.isNaN(rate) || Double.isInfinite(rate)) {
-            rate = 0;
-        }
-        return new DataSize(rate, BYTE).convertToMostSuccinctDataSize();
     }
 }

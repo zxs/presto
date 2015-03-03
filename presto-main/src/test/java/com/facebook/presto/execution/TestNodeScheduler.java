@@ -75,7 +75,7 @@ public class TestNodeScheduler
         // contents of taskMap indicate the node-task map for the current stage
         taskMap = new HashMap<>();
         nodeSelector = nodeScheduler.createNodeSelector("foo");
-        remoteTaskExecutor = Executors.newCachedThreadPool(daemonThreadsNamed("remoteTaskExecutor"));
+        remoteTaskExecutor = Executors.newCachedThreadPool(daemonThreadsNamed("remoteTaskExecutor-%s"));
     }
 
     @AfterMethod
@@ -245,7 +245,7 @@ public class TestNodeScheduler
         RemoteTask remoteTask = remoteTaskFactory.createTableScanTask(chosenNode, ImmutableList.of(new Split("foo", new TestSplitRemote())));
         nodeTaskMap.addTask(chosenNode, remoteTask);
         assertEquals(nodeTaskMap.getPartitionedSplitsOnNode(chosenNode), 1);
-        remoteTask.cancel();
+        remoteTask.abort();
         TimeUnit.MILLISECONDS.sleep(100); // Sleep until cache expires
         assertEquals(nodeTaskMap.getPartitionedSplitsOnNode(chosenNode), 0);
     }

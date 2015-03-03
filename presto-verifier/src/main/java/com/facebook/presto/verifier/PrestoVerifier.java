@@ -13,9 +13,6 @@
  */
 package com.facebook.presto.verifier;
 
-import com.facebook.presto.util.IterableTransformer;
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Injector;
@@ -37,8 +34,10 @@ import java.nio.file.Paths;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
+import static com.facebook.presto.util.ImmutableCollectors.toImmutableList;
 import static com.google.common.base.Preconditions.checkArgument;
 
 public class PrestoVerifier
@@ -172,21 +171,24 @@ public class PrestoVerifier
 
     private static List<QueryPair> applyOverrides(final VerifierConfig config, List<QueryPair> queries)
     {
-        return IterableTransformer.on(queries).transform(new Function<QueryPair, QueryPair>()
-        {
-            @Override
-            public QueryPair apply(QueryPair input)
-            {
-                Query test = new Query(
-                        Optional.fromNullable(config.getTestCatalogOverride()).or(input.getTest().getCatalog()),
-                        Optional.fromNullable(config.getTestSchemaOverride()).or(input.getTest().getSchema()),
-                        input.getTest().getQuery());
-                Query control = new Query(
-                        Optional.fromNullable(config.getControlCatalogOverride()).or(input.getControl().getCatalog()),
-                        Optional.fromNullable(config.getControlSchemaOverride()).or(input.getControl().getSchema()),
-                        input.getControl().getQuery());
-                return new QueryPair(input.getSuite(), input.getName(), test, control);
-            }
-        }).list();
+        return queries.stream()
+                .map(input -> {
+                    Query test = new Query(
+                            Optional.ofNullable(config.getTestCatalogOverride()).orElse(input.getTest().getCatalog()),
+                            Optional.ofNullable(config.getTestSchemaOverride()).orElse(input.getTest().getSchema()),
+                            input.getTest().getQuery(),
+                            Optional.ofNullable(config.getTestUsernameOverride()).orElse(input.getTest().getUsername()),
+                            Optional.ofNullable(config.getTestPasswordOverride()).orElse(
+                                    Optional.ofNullable(input.getTest().getPassword()).orElse(null)));
+                    Query control = new Query(
+                            Optional.ofNullable(config.getControlCatalogOverride()).orElse(input.getControl().getCatalog()),
+                            Optional.ofNullable(config.getControlSchemaOverride()).orElse(input.getControl().getSchema()),
+                            input.getControl().getQuery(),
+                            Optional.ofNullable(config.getControlUsernameOverride()).orElse(input.getControl().getUsername()),
+                            Optional.ofNullable(config.getControlPasswordOverride()).orElse(
+                                    Optional.ofNullable(input.getControl().getPassword()).orElse(null)));
+                    return new QueryPair(input.getSuite(), input.getName(), test, control);
+                })
+                .collect(toImmutableList());
     }
 }

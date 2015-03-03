@@ -39,10 +39,10 @@ import com.facebook.presto.sql.planner.plan.PlanFragmentId;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.PlanVisitor;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
+import com.facebook.presto.sql.planner.plan.RemoteSourceNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SampleNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
-import com.facebook.presto.sql.planner.plan.SinkNode;
 import com.facebook.presto.sql.planner.plan.SortNode;
 import com.facebook.presto.sql.planner.plan.TableCommitNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
@@ -59,23 +59,21 @@ import com.facebook.presto.sql.tree.FunctionCall;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
 import com.facebook.presto.util.GraphvizPrinter;
 import com.facebook.presto.util.JsonPlanPrinter;
-import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import io.airlift.slice.Slice;
 
 import java.lang.invoke.MethodHandle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
@@ -88,17 +86,21 @@ public class PlanPrinter
     private final StringBuilder output = new StringBuilder();
     private final Metadata metadata;
 
-    private PlanPrinter(PlanNode plan, Map<Symbol, Type> types, Metadata metadata, Optional<Map<PlanFragmentId, PlanFragment>> fragmentsById)
+    private PlanPrinter(PlanNode plan, Map<Symbol, Type> types, Metadata metadata)
+    {
+        this(plan, types, metadata, 0);
+    }
+
+    private PlanPrinter(PlanNode plan, Map<Symbol, Type> types, Metadata metadata, int indent)
     {
         checkNotNull(plan, "plan is null");
         checkNotNull(types, "types is null");
-        checkNotNull(fragmentsById, "fragmentsById is null");
         checkNotNull(metadata, "metadata is null");
 
         this.metadata = metadata;
 
-        Visitor visitor = new Visitor(types, fragmentsById);
-        plan.accept(visitor, 0);
+        Visitor visitor = new Visitor(types);
+        plan.accept(visitor, indent);
     }
 
     @Override
@@ -109,7 +111,12 @@ public class PlanPrinter
 
     public static String textLogicalPlan(PlanNode plan, Map<Symbol, Type> types, Metadata metadata)
     {
-        return new PlanPrinter(plan, types, metadata, Optional.<Map<PlanFragmentId, PlanFragment>>absent()).toString();
+        return new PlanPrinter(plan, types, metadata).toString();
+    }
+
+    public static String textLogicalPlan(PlanNode plan, Map<Symbol, Type> types, Metadata metadata, int indent)
+    {
+        return new PlanPrinter(plan, types, metadata, indent).toString();
     }
 
     public static String getJsonPlanSource(PlanNode plan, Metadata metadata)
@@ -119,15 +126,32 @@ public class PlanPrinter
 
     public static String textDistributedPlan(SubPlan plan, Metadata metadata)
     {
-        List<PlanFragment> fragments = plan.getAllFragments();
-        Map<PlanFragmentId, PlanFragment> fragmentsById = Maps.uniqueIndex(fragments, PlanFragment.idGetter());
-        PlanFragment fragment = plan.getFragment();
-        return new PlanPrinter(fragment.getRoot(), fragment.getSymbols(), metadata, Optional.of(fragmentsById)).toString();
+        StringBuilder builder = new StringBuilder();
+        for (PlanFragment fragment : plan.getAllFragments()) {
+            builder.append(String.format("Fragment %s [%s]\n",
+                    fragment.getId(),
+                    fragment.getDistribution()));
+
+            builder.append(indentString(1))
+                    .append(String.format("Output layout: [%s]\n",
+                            Joiner.on(", ").join(fragment.getOutputLayout())));
+
+            if (fragment.getOutputPartitioning() == OutputPartitioning.HASH) {
+                builder.append(indentString(1))
+                        .append(String.format("Output partitioning: [%s]\n",
+                                Joiner.on(", ").join(fragment.getPartitionBy())));
+            }
+
+            builder.append(textLogicalPlan(fragment.getRoot(), fragment.getSymbols(), metadata, 1))
+                    .append("\n");
+        }
+
+        return builder.toString();
     }
 
     public static String graphvizLogicalPlan(PlanNode plan, Map<Symbol, Type> types)
     {
-        PlanFragment fragment = new PlanFragment(new PlanFragmentId("graphviz_plan"), plan, types, PlanDistribution.NONE, plan.getId(), OutputPartitioning.NONE, ImmutableList.<Symbol>of(), Optional.<Integer>absent());
+        PlanFragment fragment = new PlanFragment(new PlanFragmentId("graphviz_plan"), plan, types, plan.getOutputSymbols(), PlanDistribution.SINGLE, plan.getId(), OutputPartitioning.NONE, ImmutableList.<Symbol>of(), Optional.empty());
         return GraphvizPrinter.printLogical(ImmutableList.of(fragment));
     }
 
@@ -146,19 +170,22 @@ public class PlanPrinter
         else {
             value = format(format, args);
         }
-        output.append(Strings.repeat("    ", indent)).append(value).append('\n');
+        output.append(indentString(indent)).append(value).append('\n');
+    }
+
+    private static String indentString(int indent)
+    {
+        return Strings.repeat("    ", indent);
     }
 
     private class Visitor
             extends PlanVisitor<Integer, Void>
     {
         private final Map<Symbol, Type> types;
-        private final Optional<Map<PlanFragmentId, PlanFragment>> fragmentsById;
 
-        public Visitor(Map<Symbol, Type> types, Optional<Map<PlanFragmentId, PlanFragment>> fragmentsById)
+        public Visitor(Map<Symbol, Type> types)
         {
             this.types = types;
-            this.fragmentsById = fragmentsById;
         }
 
         @Override
@@ -273,14 +300,7 @@ public class PlanPrinter
         {
             List<String> partitionBy = Lists.transform(node.getPartitionBy(), Functions.toStringFunction());
 
-            List<String> orderBy = Lists.transform(node.getOrderBy(), new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + " " + node.getOrderings().get(input);
-                }
-            });
+            List<String> orderBy = Lists.transform(node.getOrderBy(), input -> input + " " + node.getOrderings().get(input));
 
             List<String> args = new ArrayList<>();
             if (!partitionBy.isEmpty()) {
@@ -303,14 +323,7 @@ public class PlanPrinter
         {
             List<String> partitionBy = Lists.transform(node.getPartitionBy(), Functions.toStringFunction());
 
-            List<String> orderBy = Lists.transform(node.getOrderBy(), new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + " " + node.getOrderings().get(input);
-                }
-            });
+            List<String> orderBy = Lists.transform(node.getOrderBy(), input -> input + " " + node.getOrderings().get(input));
 
             List<String> args = new ArrayList<>();
             args.add(format("partition by (%s)", Joiner.on(", ").join(partitionBy)));
@@ -371,7 +384,7 @@ public class PlanPrinter
         {
             print(indent, "- Values => [%s]", formatOutputs(node.getOutputSymbols()));
             for (List<Expression> row : node.getRows()) {
-                print(indent + 2, Joiner.on(", ").join(row));
+                print(indent + 2, "(" + Joiner.on(", ").join(row) + ")");
             }
             return null;
         }
@@ -409,7 +422,7 @@ public class PlanPrinter
         @Override
         public Void visitOutput(OutputNode node, Integer indent)
         {
-            print(indent, "- Output[%s]", Joiner.on(", ").join(node.getColumnNames()));
+            print(indent, "- Output[%s] => [%s]", Joiner.on(", ").join(node.getColumnNames()), formatOutputs(node.getOutputSymbols()));
             for (int i = 0; i < node.getColumnNames().size(); i++) {
                 String name = node.getColumnNames().get(i);
                 Symbol symbol = node.getOutputSymbols().get(i);
@@ -424,14 +437,7 @@ public class PlanPrinter
         @Override
         public Void visitTopN(final TopNNode node, Integer indent)
         {
-            Iterable<String> keys = Iterables.transform(node.getOrderBy(), new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + " " + node.getOrderings().get(input);
-                }
-            });
+            Iterable<String> keys = Iterables.transform(node.getOrderBy(), input -> input + " " + node.getOrderings().get(input));
 
             print(indent, "- TopN[%s by (%s)] => [%s]", node.getCount(), Joiner.on(", ").join(keys), formatOutputs(node.getOutputSymbols()));
             return processChildren(node, indent + 1);
@@ -440,33 +446,18 @@ public class PlanPrinter
         @Override
         public Void visitSort(final SortNode node, Integer indent)
         {
-            Iterable<String> keys = Iterables.transform(node.getOrderBy(), new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + " " + node.getOrderings().get(input);
-                }
-            });
+            Iterable<String> keys = Iterables.transform(node.getOrderBy(), input -> input + " " + node.getOrderings().get(input));
 
             print(indent, "- Sort[%s] => [%s]", Joiner.on(", ").join(keys), formatOutputs(node.getOutputSymbols()));
             return processChildren(node, indent + 1);
         }
 
         @Override
-        public Void visitExchange(ExchangeNode node, Integer indent)
+        public Void visitRemoteSource(RemoteSourceNode node, Integer indent)
         {
-            print(indent, "- Exchange[%s] => [%s]", node.getSourceFragmentIds(), formatOutputs(node.getOutputSymbols()));
+            print(indent, "- RemoteSource[%s] => [%s]", Joiner.on(',').join(node.getSourceFragmentIds()), formatOutputs(node.getOutputSymbols()));
 
-            return processExchange(node, indent + 1);
-        }
-
-        @Override
-        public Void visitSink(SinkNode node, Integer indent)
-        {
-            print(indent, "- Sink[%s] => [%s]", node.getId(), formatOutputs(node.getOutputSymbols()));
-
-            return processChildren(node, indent + 1);
+            return null;
         }
 
         @Override
@@ -507,6 +498,14 @@ public class PlanPrinter
         }
 
         @Override
+        public Void visitExchange(ExchangeNode node, Integer indent)
+        {
+            print(indent, "- Exchange[%s] => %s", node.getType(), formatOutputs(node.getOutputSymbols()));
+
+            return processChildren(node, indent + 1);
+        }
+
+        @Override
         protected Void visitPlan(PlanNode node, Integer context)
         {
             throw new UnsupportedOperationException("not yet implemented: " + node.getClass().getName());
@@ -521,25 +520,9 @@ public class PlanPrinter
             return null;
         }
 
-        private Void processExchange(ExchangeNode node, int indent)
-        {
-            for (PlanFragmentId planFragmentId : node.getSourceFragmentIds()) {
-                PlanFragment target = fragmentsById.get().get(planFragmentId);
-                target.getRoot().accept(new Visitor(target.getSymbols(), fragmentsById), indent);
-            }
-            return null;
-        }
-
         private String formatOutputs(Iterable<Symbol> symbols)
         {
-            return Joiner.on(", ").join(Iterables.transform(symbols, new Function<Symbol, String>()
-            {
-                @Override
-                public String apply(Symbol input)
-                {
-                    return input + ":" + types.get(input);
-                }
-            }));
+            return Joiner.on(", ").join(Iterables.transform(symbols, input -> input + ":" + types.get(input)));
         }
     }
 
@@ -552,7 +535,7 @@ public class PlanPrinter
         }
 
         try {
-            ColumnMetadata columnMetadata  = metadata.getColumnMetadata(table, column);
+            ColumnMetadata columnMetadata = metadata.getColumnMetadata(table, column);
             MethodHandle method = metadata.getFunctionRegistry().getCoercion(columnMetadata.getType(), VARCHAR)
                     .getMethodHandle();
 

@@ -15,9 +15,9 @@ package com.facebook.presto.execution;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Function;
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 
@@ -77,16 +77,16 @@ public class BufferInfo
             return false;
         }
         final BufferInfo other = (BufferInfo) obj;
-        return Objects.equal(this.bufferId, other.bufferId) &&
-                Objects.equal(this.finished, other.finished) &&
-                Objects.equal(this.bufferedPages, other.bufferedPages) &&
-                Objects.equal(this.pagesSent, other.pagesSent);
+        return Objects.equals(this.bufferId, other.bufferId) &&
+                Objects.equals(this.finished, other.finished) &&
+                Objects.equals(this.bufferedPages, other.bufferedPages) &&
+                Objects.equals(this.pagesSent, other.pagesSent);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(bufferId, finished, bufferedPages, pagesSent);
+        return Objects.hash(bufferId, finished, bufferedPages, pagesSent);
     }
 
     @Override
@@ -98,17 +98,5 @@ public class BufferInfo
                 .add("bufferedPages", bufferedPages)
                 .add("pagesSent", pagesSent)
                 .toString();
-    }
-
-    public static Function<BufferInfo, TaskId> bufferIdGetter()
-    {
-        return new Function<BufferInfo, TaskId>()
-        {
-            @Override
-            public TaskId apply(BufferInfo taskInfo)
-            {
-                return taskInfo.getBufferId();
-            }
-        };
     }
 }

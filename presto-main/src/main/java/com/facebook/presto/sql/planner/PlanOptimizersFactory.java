@@ -18,6 +18,8 @@ import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.split.SplitManager;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.parser.SqlParser;
+import com.facebook.presto.sql.planner.optimizations.AddExchanges;
+import com.facebook.presto.sql.planner.optimizations.BeginTableWrite;
 import com.facebook.presto.sql.planner.optimizations.CanonicalizeExpressions;
 import com.facebook.presto.sql.planner.optimizations.CountConstantOptimizer;
 import com.facebook.presto.sql.planner.optimizations.HashGenerationOptimizer;
@@ -26,6 +28,7 @@ import com.facebook.presto.sql.planner.optimizations.IndexJoinOptimizer;
 import com.facebook.presto.sql.planner.optimizations.LimitPushDown;
 import com.facebook.presto.sql.planner.optimizations.MergeProjections;
 import com.facebook.presto.sql.planner.optimizations.MetadataQueryOptimizer;
+import com.facebook.presto.sql.planner.optimizations.NormalizeJoinOrder;
 import com.facebook.presto.sql.planner.optimizations.PlanOptimizer;
 import com.facebook.presto.sql.planner.optimizations.PredicatePushDown;
 import com.facebook.presto.sql.planner.optimizations.PruneRedundantProjections;
@@ -49,6 +52,11 @@ public class PlanOptimizersFactory
     @Inject
     public PlanOptimizersFactory(Metadata metadata, SqlParser sqlParser, SplitManager splitManager, IndexManager indexManager, FeaturesConfig featuresConfig)
     {
+        this(metadata, sqlParser, splitManager, indexManager, featuresConfig, false);
+    }
+
+    public PlanOptimizersFactory(Metadata metadata, SqlParser sqlParser, SplitManager splitManager, IndexManager indexManager, FeaturesConfig featuresConfig, boolean forceSingleNode)
+    {
         ImmutableList.Builder<PlanOptimizer> builder = ImmutableList.builder();
 
         builder.add(new ImplementSampleAsFilter(),
@@ -58,8 +66,8 @@ public class PlanOptimizersFactory
                 new PruneRedundantProjections(),
                 new SetFlatteningOptimizer(),
                 new LimitPushDown(), // Run the LimitPushDown after flattening set operators to make it easier to do the set flattening
-                new PredicatePushDown(metadata, sqlParser, splitManager, featuresConfig.isExperimentalSyntaxEnabled()),
-                new PredicatePushDown(metadata, sqlParser, splitManager, featuresConfig.isExperimentalSyntaxEnabled()), // Run predicate push down one more time in case we can leverage new information from generated partitions
+                new PredicatePushDown(metadata, sqlParser, splitManager),
+                new PredicatePushDown(metadata, sqlParser, splitManager), // Run predicate push down one more time in case we can leverage new information from generated partitions
                 new MergeProjections(),
                 new SimplifyExpressions(metadata, sqlParser), // Re-run the SimplifyExpressions to simplify any recomposed expressions from other optimizations
                 new UnaliasSymbolReferences(), // Run again because predicate pushdown might add more projections
@@ -73,6 +81,13 @@ public class PlanOptimizersFactory
 
         if (featuresConfig.isOptimizeMetadataQueries()) {
             builder.add(new MetadataQueryOptimizer(metadata, splitManager));
+        }
+
+        builder.add(new NormalizeJoinOrder());
+        builder.add(new BeginTableWrite(metadata)); // HACK! see comments in BeginTableWrite
+
+        if (!forceSingleNode) {
+            builder.add(new AddExchanges(metadata, featuresConfig.isDistributedIndexJoinsEnabled(), featuresConfig.isDistributedJoinsEnabled()));
         }
 
         // TODO: consider adding a formal final plan sanitization optimizer that prepares the plan for transmission/execution/logging

@@ -14,13 +14,18 @@
 package com.facebook.presto.sql;
 
 import com.facebook.presto.sql.tree.AliasedRelation;
+import com.facebook.presto.sql.tree.BooleanLiteral;
+import com.facebook.presto.sql.tree.CoalesceExpression;
 import com.facebook.presto.sql.tree.ComparisonExpression;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.FunctionCall;
+import com.facebook.presto.sql.tree.IfExpression;
 import com.facebook.presto.sql.tree.LogicalBinaryExpression;
 import com.facebook.presto.sql.tree.QualifiedName;
 import com.facebook.presto.sql.tree.QualifiedNameReference;
 import com.facebook.presto.sql.tree.Query;
+import com.facebook.presto.sql.tree.QueryBody;
+import com.facebook.presto.sql.tree.QuerySpecification;
 import com.facebook.presto.sql.tree.Relation;
 import com.facebook.presto.sql.tree.Row;
 import com.facebook.presto.sql.tree.SearchedCaseExpression;
@@ -28,14 +33,15 @@ import com.facebook.presto.sql.tree.Select;
 import com.facebook.presto.sql.tree.SelectItem;
 import com.facebook.presto.sql.tree.SingleColumn;
 import com.facebook.presto.sql.tree.SortItem;
+import com.facebook.presto.sql.tree.StringLiteral;
 import com.facebook.presto.sql.tree.Table;
 import com.facebook.presto.sql.tree.TableSubquery;
 import com.facebook.presto.sql.tree.Values;
 import com.facebook.presto.sql.tree.WhenClause;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Optional;
 
 public final class QueryUtil
 {
@@ -75,14 +81,14 @@ public final class QueryUtil
         return new Select(false, items);
     }
 
-    public static Optional<Relation> table(QualifiedName name)
+    public static Relation table(QualifiedName name)
     {
-        return Optional.<Relation>of(new Table(name));
+        return new Table(name);
     }
 
-    public static Optional<Relation> subquery(Query query)
+    public static Relation subquery(Query query)
     {
-        return Optional.<Relation>of(new TableSubquery(query));
+        return new TableSubquery(query);
     }
 
     public static SortItem ascending(String name)
@@ -102,7 +108,7 @@ public final class QueryUtil
 
     public static Expression caseWhen(Expression operand, Expression result)
     {
-        return new SearchedCaseExpression(ImmutableList.of(new WhenClause(operand, result)), null);
+        return new SearchedCaseExpression(ImmutableList.of(new WhenClause(operand, result)), Optional.empty());
     }
 
     public static Expression functionCall(String name, Expression... arguments)
@@ -123,5 +129,71 @@ public final class QueryUtil
     public static Relation aliased(Relation relation, String alias, List<String> columnAliases)
     {
         return new AliasedRelation(relation, alias, columnAliases);
+    }
+
+    public static SelectItem aliasedNullToEmpty(String column, String alias)
+    {
+        return new SingleColumn(new CoalesceExpression(nameReference(column), new StringLiteral("")), alias);
+    }
+
+    public static SelectItem aliasedYesNoToBoolean(String column, String alias)
+    {
+        Expression expression = new IfExpression(
+                equal(nameReference(column), new StringLiteral("YES")),
+                BooleanLiteral.TRUE_LITERAL,
+                BooleanLiteral.FALSE_LITERAL);
+        return new SingleColumn(expression, alias);
+    }
+
+    public static List<SortItem> ordering(SortItem... items)
+    {
+        return ImmutableList.copyOf(items);
+    }
+
+    public static Query simpleQuery(Select select, Relation from)
+    {
+        return simpleQuery(select, from, Optional.empty(), ImmutableList.of());
+    }
+
+    public static Query simpleQuery(Select select, Relation from, List<SortItem> ordering)
+    {
+        return simpleQuery(select, from, Optional.empty(), ordering);
+    }
+
+    public static Query simpleQuery(Select select, Relation from, Expression where)
+    {
+        return simpleQuery(select, from, Optional.of(where), ImmutableList.of());
+    }
+
+    public static Query simpleQuery(Select select, Relation from, Expression where, List<SortItem> ordering)
+    {
+        return simpleQuery(select, from, Optional.of(where), ordering);
+    }
+
+    public static Query simpleQuery(Select select, Relation from, Optional<Expression> where, List<SortItem> ordering)
+    {
+        return simpleQuery(select, from, where, ImmutableList.of(), Optional.empty(), ordering, Optional.empty());
+    }
+
+    public static Query simpleQuery(Select select, Relation from, Optional<Expression> where, List<Expression> grouping, Optional<Expression> having, List<SortItem> ordering, Optional<String> limit)
+    {
+        return query(new QuerySpecification(
+                select,
+                Optional.of(from),
+                where,
+                grouping,
+                having,
+                ordering,
+                limit));
+    }
+
+    public static Query query(QueryBody body)
+    {
+        return new Query(
+                Optional.empty(),
+                body,
+                ImmutableList.of(),
+                Optional.empty(),
+                Optional.empty());
     }
 }

@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.gen;
 
+import com.facebook.presto.SequencePageBuilder;
 import com.facebook.presto.block.BlockAssertions;
 import com.facebook.presto.execution.TaskId;
 import com.facebook.presto.operator.DriverContext;
@@ -20,7 +21,6 @@ import com.facebook.presto.operator.JoinProbe;
 import com.facebook.presto.operator.JoinProbeFactory;
 import com.facebook.presto.operator.LookupSource;
 import com.facebook.presto.operator.OperatorContext;
-import com.facebook.presto.operator.SequencePageBuilder;
 import com.facebook.presto.operator.TaskContext;
 import com.facebook.presto.operator.ValuesOperator;
 import com.facebook.presto.spi.Page;
@@ -30,7 +30,6 @@ import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.gen.JoinCompiler.LookupSourceFactory;
 import com.facebook.presto.type.TypeUtils;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -40,6 +39,7 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
@@ -61,7 +61,7 @@ public class TestJoinProbeCompiler
     @BeforeMethod
     public void setUp()
     {
-        executor = newCachedThreadPool(daemonThreadsNamed("test"));
+        executor = newCachedThreadPool(daemonThreadsNamed("test-%s"));
         taskContext = new TaskContext(new TaskId("query", "stage", "task"), executor, TEST_SESSION);
     }
 
@@ -100,7 +100,7 @@ public class TestJoinProbeCompiler
             }
         }
 
-        Optional<Integer> hashChannel = Optional.absent();
+        Optional<Integer> hashChannel = Optional.empty();
         List<List<Block>> channels = ImmutableList.of(channel);
 
         if (hashEnabled) {
@@ -130,6 +130,7 @@ public class TestJoinProbeCompiler
         for (int position = 0; position < page.getPositionCount(); position++) {
             assertTrue(joinProbe.advanceNextPosition());
 
+            pageBuilder.declarePosition();
             joinProbe.appendTo(pageBuilder);
 
             assertEquals(joinProbe.getCurrentJoinPosition(), lookupSource.getJoinPosition(position, page));

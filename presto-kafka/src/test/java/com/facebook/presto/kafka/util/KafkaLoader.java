@@ -28,6 +28,8 @@ import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,7 +43,6 @@ import static com.facebook.presto.spi.type.TimeWithTimeZoneType.TIME_WITH_TIME_Z
 import static com.facebook.presto.spi.type.TimestampType.TIMESTAMP;
 import static com.facebook.presto.spi.type.TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
-import static com.facebook.presto.util.DateTimeUtils.parseDate;
 import static com.facebook.presto.util.DateTimeUtils.parseTime;
 import static com.facebook.presto.util.DateTimeUtils.parseTimestamp;
 import static com.facebook.presto.util.DateTimeUtils.parseTimestampWithTimeZone;
@@ -107,13 +108,13 @@ public class KafkaLoader
                         }
                     }
 
-                    producer.send(new KeyedMessage<Long, Object>(topicName, count.getAndIncrement(), builder.build()));
+                    producer.send(new KeyedMessage<>(topicName, count.getAndIncrement(), builder.build()));
                 }
             }
         }
 
         @Override
-        public Void build()
+        public Void build(Map<String, String> setSessionProperties, Set<String> resetSessionProperties)
         {
             return null;
         }
@@ -134,7 +135,7 @@ public class KafkaLoader
                 return ((Number) value).doubleValue();
             }
             if (DATE.equals(type)) {
-                return ISO8601_FORMATTER.print(parseDate((String) value));
+                return value;
             }
             if (TIME.equals(type)) {
                 return ISO8601_FORMATTER.print(parseTime(timeZoneKey, (String) value));

@@ -13,13 +13,12 @@
  */
 package com.facebook.presto.hive;
 
-import com.facebook.presto.hive.shaded.com.google.common.io.Closeables;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.DynamicSliceOutput;
@@ -54,11 +53,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-import static com.facebook.presto.hive.HiveBooleanParser.isFalse;
-import static com.facebook.presto.hive.HiveBooleanParser.isTrue;
 import static com.facebook.presto.hive.HiveErrorCode.HIVE_CURSOR_ERROR;
-import static com.facebook.presto.hive.NumberParser.parseDouble;
-import static com.facebook.presto.hive.NumberParser.parseLong;
+import static com.facebook.presto.hive.HiveUtil.bigintPartitionKey;
+import static com.facebook.presto.hive.HiveUtil.booleanPartitionKey;
+import static com.facebook.presto.hive.HiveUtil.doublePartitionKey;
+import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.BooleanType.BOOLEAN;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
@@ -69,6 +68,8 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Maps.uniqueIndex;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static parquet.schema.OriginalType.LIST;
 import static parquet.schema.OriginalType.MAP;
 import static parquet.schema.OriginalType.MAP_KEY_VALUE;
@@ -141,47 +142,34 @@ class ParquetHiveRecordCursor
         }
 
         // parse requested partition columns
-        Map<String, HivePartitionKey> partitionKeysByName = uniqueIndex(partitionKeys, HivePartitionKey.nameGetter());
+        Map<String, HivePartitionKey> partitionKeysByName = uniqueIndex(partitionKeys, HivePartitionKey::getName);
         for (int columnIndex = 0; columnIndex < columns.size(); columnIndex++) {
             HiveColumnHandle column = columns.get(columnIndex);
             if (column.isPartitionKey()) {
                 HivePartitionKey partitionKey = partitionKeysByName.get(column.getName());
                 checkArgument(partitionKey != null, "Unknown partition key %s", column.getName());
 
-                byte[] bytes = partitionKey.getValue().getBytes(Charsets.UTF_8);
+                byte[] bytes = partitionKey.getValue().getBytes(UTF_8);
 
+                String name = names[columnIndex];
+                Type type = types[columnIndex];
                 if (HiveUtil.isHiveNull(bytes)) {
                     nullsRowDefault[columnIndex] = true;
                 }
-                else if (types[columnIndex].equals(BOOLEAN)) {
-                    if (isTrue(bytes, 0, bytes.length)) {
-                        booleans[columnIndex] = true;
-                    }
-                    else if (isFalse(bytes, 0, bytes.length)) {
-                        booleans[columnIndex] = false;
-                    }
-                    else {
-                        String valueString = new String(bytes, Charsets.UTF_8);
-                        throw new IllegalArgumentException(String.format("Invalid partition value '%s' for BOOLEAN partition key %s", valueString, names[columnIndex]));
-                    }
+                else if (type.equals(BOOLEAN)) {
+                    booleans[columnIndex] = booleanPartitionKey(partitionKey.getValue(), name);
                 }
-                else if (types[columnIndex].equals(BIGINT)) {
-                    if (bytes.length == 0) {
-                        throw new IllegalArgumentException(String.format("Invalid partition value '' for BIGINT partition key %s", names[columnIndex]));
-                    }
-                    longs[columnIndex] = parseLong(bytes, 0, bytes.length);
+                else if (type.equals(BIGINT)) {
+                    longs[columnIndex] = bigintPartitionKey(partitionKey.getValue(), name);
                 }
-                else if (types[columnIndex].equals(DOUBLE)) {
-                    if (bytes.length == 0) {
-                        throw new IllegalArgumentException(String.format("Invalid partition value '' for DOUBLE partition key %s", names[columnIndex]));
-                    }
-                    doubles[columnIndex] = parseDouble(bytes, 0, bytes.length);
+                else if (type.equals(DOUBLE)) {
+                    doubles[columnIndex] = doublePartitionKey(partitionKey.getValue(), name);
                 }
-                else if (types[columnIndex].equals(VARCHAR)) {
+                else if (type.equals(VARCHAR)) {
                     slices[columnIndex] = Slices.wrappedBuffer(bytes);
                 }
                 else {
-                    throw new UnsupportedOperationException("Unsupported column type: " + types[columnIndex]);
+                    throw new PrestoException(NOT_SUPPORTED, format("Unsupported column type %s for partition key: %s", type.getDisplayName(), name));
                 }
             }
         }
@@ -408,20 +396,23 @@ class ParquetHiveRecordCursor
                     }
                     else {
                         GroupType groupType = parquetType.asGroupType();
-                        switch (groupType.getOriginalType()) {
-                            case LIST:
+                        switch (column.getTypeSignature().getBase()) {
+                            case StandardTypes.ARRAY:
                                 ParquetJsonColumnConverter listConverter = new ParquetJsonColumnConverter(new ParquetListJsonConverter(groupType.getName(), null, groupType), i);
                                 converters.add(listConverter);
                                 closeableBuilder.add(listConverter);
                                 break;
-                            case MAP:
-                            case MAP_KEY_VALUE: // original versions of Parquet have map and entry swapped
+                            case StandardTypes.MAP:
                                 ParquetJsonColumnConverter mapConverter = new ParquetJsonColumnConverter(new ParquetMapJsonConverter(groupType.getName(), null, groupType), i);
                                 converters.add(mapConverter);
                                 closeableBuilder.add(mapConverter);
                                 break;
-                            case UTF8:
-                            case ENUM:
+                            case StandardTypes.ROW:
+                                ParquetJsonColumnConverter rowConverter = new ParquetJsonColumnConverter(new ParquetStructJsonConverter(groupType.getName(), null, groupType), i);
+                                converters.add(rowConverter);
+                                closeableBuilder.add(rowConverter);
+                                break;
+                            default:
                                 throw new IllegalArgumentException("Group column " + groupType.getName() + " type " + groupType.getOriginalType() + " not supported");
                         }
                     }
@@ -463,7 +454,7 @@ class ParquetHiveRecordCursor
                 throws IOException
         {
             for (Closeable closeable : converterCloseables) {
-                Closeables.closeQuietly(closeable);
+                closeQuietly(closeable);
             }
         }
     }
@@ -658,7 +649,7 @@ class ParquetHiveRecordCursor
         public void close()
                 throws IOException
         {
-            Closeables.closeQuietly(jsonConverter);
+            closeQuietly(jsonConverter);
         }
     }
 
@@ -762,7 +753,7 @@ class ParquetHiveRecordCursor
                 throws IOException
         {
             for (JsonConverter converter : converters) {
-                Closeables.closeQuietly(converter);
+                closeQuietly(converter);
             }
         }
     }
@@ -835,7 +826,7 @@ class ParquetHiveRecordCursor
         public void close()
                 throws IOException
         {
-            Closeables.closeQuietly(elementConverter);
+            closeQuietly(elementConverter);
         }
     }
 
@@ -900,7 +891,7 @@ class ParquetHiveRecordCursor
         public void close()
                 throws IOException
         {
-            Closeables.closeQuietly(elementConverter);
+            closeQuietly(elementConverter);
         }
     }
 
@@ -983,7 +974,7 @@ class ParquetHiveRecordCursor
         public void close()
                 throws IOException
         {
-            Closeables.closeQuietly(entryConverter);
+            closeQuietly(entryConverter);
         }
     }
 
@@ -1067,8 +1058,8 @@ class ParquetHiveRecordCursor
         public void close()
                 throws IOException
         {
-            Closeables.closeQuietly(keyConverter);
-            Closeables.closeQuietly(valueConverter);
+            closeQuietly(keyConverter);
+            closeQuietly(valueConverter);
         }
     }
 
@@ -1356,6 +1347,17 @@ class ParquetHiveRecordCursor
     {
         if (fieldName != null) {
             generator.writeFieldName(fieldName);
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable)
+    {
+        try {
+            if (closeable != null) {
+                closeable.close();
+            }
+        }
+        catch (IOException ignored) {
         }
     }
 }

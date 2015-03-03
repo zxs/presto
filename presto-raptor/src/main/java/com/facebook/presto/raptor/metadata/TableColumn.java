@@ -17,8 +17,6 @@ import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
-import com.google.common.base.Function;
-import com.google.common.base.Objects;
 import org.skife.jdbi.v2.StatementContext;
 import org.skife.jdbi.v2.tweak.ResultSetMapper;
 
@@ -26,6 +24,7 @@ import javax.inject.Inject;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Objects;
 
 import static com.facebook.presto.spi.type.TypeSignature.parseTypeSignature;
 import static com.google.common.base.MoreObjects.toStringHelper;
@@ -78,7 +77,7 @@ public class TableColumn
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(table, columnName, ordinalPosition, dataType);
+        return Objects.hash(table, columnName, ordinalPosition, dataType);
     }
 
     @Override
@@ -91,10 +90,10 @@ public class TableColumn
             return false;
         }
         TableColumn o = (TableColumn) obj;
-        return Objects.equal(table, o.table) &&
-                Objects.equal(columnName, o.columnName) &&
-                Objects.equal(ordinalPosition, o.ordinalPosition) &&
-                Objects.equal(dataType, o.dataType);
+        return Objects.equals(table, o.table) &&
+                Objects.equals(columnName, o.columnName) &&
+                Objects.equals(ordinalPosition, o.ordinalPosition) &&
+                Objects.equals(dataType, o.dataType);
     }
 
     @Override
@@ -111,18 +110,6 @@ public class TableColumn
     public ColumnMetadata toColumnMetadata()
     {
         return new ColumnMetadata(columnName, dataType, ordinalPosition, false);
-    }
-
-    public static Function<TableColumn, ColumnMetadata> columnMetadataGetter()
-    {
-        return new Function<TableColumn, ColumnMetadata>()
-        {
-            @Override
-            public ColumnMetadata apply(TableColumn input)
-            {
-                return input.toColumnMetadata();
-            }
-        };
     }
 
     public static class Mapper

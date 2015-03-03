@@ -17,7 +17,7 @@ import com.facebook.presto.raptor.RaptorColumnHandle;
 import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.spi.type.Type;
-import com.google.common.base.Optional;
+import io.airlift.units.DataSize;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,9 +26,11 @@ public interface StorageManager
 {
     ConnectorPageSource getPageSource(UUID shardUuid, List<Long> columnIds, List<Type> columnTypes, TupleDomain<RaptorColumnHandle> effectivePredicate);
 
-    OutputHandle createOutputHandle(List<Long> columnIds, List<Type> columnTypes, Optional<Long> sampleWeightColumnId);
-
-    void commit(OutputHandle outputHandle);
+    StoragePageSink createStoragePageSink(List<Long> columnIds, List<Type> columnTypes);
 
     boolean isBackupAvailable();
+
+    long getMaxRowCount();
+
+    DataSize getMaxBufferSize();
 }

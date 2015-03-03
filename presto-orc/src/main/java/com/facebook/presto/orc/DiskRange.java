@@ -15,6 +15,8 @@ package com.facebook.presto.orc;
 
 import com.google.common.primitives.Ints;
 
+import java.util.Objects;
+
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -48,6 +50,11 @@ public final class DiskRange
         return offset + length;
     }
 
+    public boolean contains(DiskRange diskRange)
+    {
+        return offset <= diskRange.getOffset() && diskRange.getEnd() <= getEnd();
+    }
+
     /**
      * Returns the minimal DiskRange that encloses both this DiskRange
      * and otherDiskRange. If there was a gap between the ranges the
@@ -59,6 +66,26 @@ public final class DiskRange
         long start = Math.min(this.offset, otherDiskRange.getOffset());
         long end = Math.max(getEnd(), otherDiskRange.getEnd());
         return new DiskRange(start, Ints.checkedCast(end - start));
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(offset, length);
+    }
+
+    @Override
+    public boolean equals(Object obj)
+    {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
+        DiskRange other = (DiskRange) obj;
+        return Objects.equals(this.offset, other.offset)
+                && Objects.equals(this.length, other.length);
     }
 
     @Override

@@ -64,7 +64,7 @@ public class DataDefinitionExecution<T extends Statement>
 
             stateMachine.recordExecutionStart();
 
-            task.execute(statement, session, metadata);
+            task.execute(statement, session, metadata, stateMachine);
 
             stateMachine.finished();
         }
@@ -87,12 +87,6 @@ public class DataDefinitionExecution<T extends Statement>
     }
 
     @Override
-    public void cancel()
-    {
-        stateMachine.cancel();
-    }
-
-    @Override
     public void fail(Throwable cause)
     {
         stateMachine.fail(cause);
@@ -108,6 +102,12 @@ public class DataDefinitionExecution<T extends Statement>
     public void recordHeartbeat()
     {
         stateMachine.recordHeartbeat();
+    }
+
+    @Override
+    public QueryId getQueryId()
+    {
+        return stateMachine.getQueryId();
     }
 
     @Override
@@ -155,7 +155,8 @@ public class DataDefinitionExecution<T extends Statement>
                 QueryStateMachine stateMachine)
         {
             DataDefinitionTask<T> task = getTask(statement);
-            checkArgument(task != null, "no task for statement: " + statement.getClass());
+            checkArgument(task != null, "no task for statement: %s", statement.getClass().getSimpleName());
+            stateMachine.setUpdateType(task.getName());
             return new DataDefinitionExecution<>(task, statement, session, metadata, stateMachine);
         }
 

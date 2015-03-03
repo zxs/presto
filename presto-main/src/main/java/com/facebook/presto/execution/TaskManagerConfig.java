@@ -14,6 +14,7 @@
 package com.facebook.presto.execution;
 
 import io.airlift.configuration.Config;
+import io.airlift.configuration.ConfigDescription;
 import io.airlift.units.DataSize;
 import io.airlift.units.DataSize.Unit;
 import io.airlift.units.Duration;
@@ -34,11 +35,14 @@ public class TaskManagerConfig
     private DataSize operatorPreAllocatedMemory = new DataSize(16, Unit.MEGABYTE);
     private DataSize maxTaskIndexMemoryUsage = new DataSize(64, Unit.MEGABYTE);
     private int maxShardProcessorThreads = Runtime.getRuntime().availableProcessors() * 4;
+    private Integer minDrivers;
 
     private DataSize sinkMaxBufferSize = new DataSize(32, Unit.MEGABYTE);
 
-    private Duration clientTimeout = new Duration(5, TimeUnit.MINUTES);
+    private Duration clientTimeout = new Duration(2, TimeUnit.MINUTES);
     private Duration infoMaxAge = new Duration(15, TimeUnit.MINUTES);
+    private int writerCount = 1;
+    private int httpNotificationThreads = 25;
 
     public boolean isVerboseStats()
     {
@@ -144,6 +148,22 @@ public class TaskManagerConfig
         return this;
     }
 
+    @Min(1)
+    public int getMinDrivers()
+    {
+        if (minDrivers == null) {
+            return 2 * maxShardProcessorThreads;
+        }
+        return minDrivers;
+    }
+
+    @Config("task.min-drivers")
+    public TaskManagerConfig setMinDrivers(int minDrivers)
+    {
+        this.minDrivers = minDrivers;
+        return this;
+    }
+
     @NotNull
     public DataSize getSinkMaxBufferSize()
     {
@@ -181,6 +201,33 @@ public class TaskManagerConfig
     public TaskManagerConfig setInfoMaxAge(Duration infoMaxAge)
     {
         this.infoMaxAge = infoMaxAge;
+        return this;
+    }
+
+    @Min(1)
+    public int getWriterCount()
+    {
+        return writerCount;
+    }
+
+    @Config("task.writer-count")
+    @ConfigDescription("Number of writers per task")
+    public TaskManagerConfig setWriterCount(int writerCount)
+    {
+        this.writerCount = writerCount;
+        return this;
+    }
+
+    @Min(1)
+    public int getHttpNotificationThreads()
+    {
+        return httpNotificationThreads;
+    }
+
+    @Config("task.http-notification-threads")
+    public TaskManagerConfig setHttpNotificationThreads(int httpNotificationThreads)
+    {
+        this.httpNotificationThreads = httpNotificationThreads;
         return this;
     }
 }

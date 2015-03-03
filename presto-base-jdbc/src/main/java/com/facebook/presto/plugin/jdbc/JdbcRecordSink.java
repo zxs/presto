@@ -14,12 +14,22 @@
 package com.facebook.presto.plugin.jdbc;
 
 import com.facebook.presto.spi.RecordSink;
+import com.facebook.presto.spi.type.Type;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+import io.airlift.slice.Slice;
+import org.joda.time.DateTimeZone;
+import org.joda.time.chrono.ISOChronology;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
+import static com.facebook.presto.spi.type.DateType.DATE;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -30,6 +40,7 @@ public class JdbcRecordSink
     private final PreparedStatement statement;
 
     private final int fieldCount;
+    private final List<Type> columnTypes;
     private int field = -1;
     private int batchSize;
 
@@ -51,6 +62,7 @@ public class JdbcRecordSink
         }
 
         fieldCount = handle.getColumnNames().size();
+        columnTypes = handle.getColumnTypes();
     }
 
     @Override
@@ -109,7 +121,15 @@ public class JdbcRecordSink
     public void appendLong(long value)
     {
         try {
-            statement.setLong(next(), value);
+            if (DATE.equals(columnTypes.get(field))) {
+                // convert to midnight in default time zone
+                long utcMillis = TimeUnit.DAYS.toMillis(value);
+                long localMillis = ISOChronology.getInstanceUTC().getZone().getMillisKeepLocal(DateTimeZone.getDefault(), utcMillis);
+                statement.setDate(next(), new Date(localMillis));
+            }
+            else {
+                statement.setLong(next(), value);
+            }
         }
         catch (SQLException e) {
             throw Throwables.propagate(e);
@@ -139,7 +159,7 @@ public class JdbcRecordSink
     }
 
     @Override
-    public String commit()
+    public Collection<Slice> commit()
     {
         // commit and close
         try (Connection connection = this.connection) {
@@ -151,7 +171,28 @@ public class JdbcRecordSink
         catch (SQLException e) {
             throw Throwables.propagate(e);
         }
-        return ""; // the committer does not need any additional info
+        // the committer does not need any additional info
+        return ImmutableList.of();
+    }
+
+    @SuppressWarnings("UnusedDeclaration")
+    @Override
+    public void rollback()
+    {
+        // rollback and close
+        try (Connection connection = this.connection;
+             PreparedStatement statement = this.statement) {
+            connection.rollback();
+        }
+        catch (SQLException e) {
+            throw Throwables.propagate(e);
+        }
+    }
+
+    @Override
+    public List<Type> getColumnTypes()
+    {
+        return columnTypes;
     }
 
     private int next()

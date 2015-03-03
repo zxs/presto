@@ -11,20 +11,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-/*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.facebook.presto.hive;
 
 import com.facebook.presto.spi.ConnectorSession;
@@ -40,6 +26,7 @@ import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import io.airlift.slice.Slice;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
@@ -56,12 +43,12 @@ import org.apache.hadoop.mapred.Reporter;
 import java.io.IOException;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.util.Collection;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import static com.facebook.presto.hive.HiveColumnHandle.SAMPLE_WEIGHT_COLUMN_NAME;
-import static com.facebook.presto.hive.HiveType.columnTypeToHiveType;
-import static com.facebook.presto.hive.HiveType.hiveTypeNameGetter;
 import static com.facebook.presto.hive.HiveUtil.isArrayType;
 import static com.facebook.presto.hive.HiveUtil.isMapType;
 import static com.google.common.base.Preconditions.checkState;
@@ -103,7 +90,7 @@ public class HiveRecordSink
         columnTypes = ImmutableList.copyOf(handle.getColumnTypes());
         connectorSession = handle.getConnectorSession();
 
-        Iterable<String> hiveTypeNames = transform(transform(handle.getColumnTypes(), columnTypeToHiveType()), hiveTypeNameGetter());
+        Iterable<String> hiveTypeNames = transform(transform(handle.getColumnTypes(), HiveType::toHiveType), HiveType::getHiveTypeName);
 
         Properties properties = new Properties();
         properties.setProperty(META_TABLE_COLUMNS, Joiner.on(',').join(handle.getColumnNames()));
@@ -162,7 +149,8 @@ public class HiveRecordSink
     {
         Type type = columnTypes.get(field);
         if (type == DateType.DATE) {
-            append(new Date(value));
+            // todo should this be adjusted to midnight in JVM timezone?
+            append(new Date(TimeUnit.DAYS.toMillis(value)));
         }
         else if (type == TimestampType.TIMESTAMP) {
             append(new Timestamp(value));
@@ -191,7 +179,7 @@ public class HiveRecordSink
     }
 
     @Override
-    public String commit()
+    public Collection<Slice> commit()
     {
         checkState(field == -1, "record not finished");
 
@@ -202,7 +190,25 @@ public class HiveRecordSink
             throw Throwables.propagate(e);
         }
 
-        return ""; // the committer can list the directory
+        // the committer can list the directory
+        return ImmutableList.of();
+    }
+
+    @Override
+    public void rollback()
+    {
+        try {
+            recordWriter.close(true);
+        }
+        catch (IOException e) {
+            throw Throwables.propagate(e);
+        }
+    }
+
+    @Override
+    public List<Type> getColumnTypes()
+    {
+        return columnTypes;
     }
 
     private void append(Object value)
@@ -287,5 +293,16 @@ public class HiveRecordSink
             return ObjectInspectorFactory.getStandardMapObjectInspector(keyObjectInspector, valueObjectInspector);
         }
         throw new IllegalArgumentException("unsupported type: " + type);
+    }
+
+    public static boolean isTypeSupported(Type type)
+    {
+        try {
+            getJavaObjectInspector(type);
+            return true;
+        }
+        catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 }

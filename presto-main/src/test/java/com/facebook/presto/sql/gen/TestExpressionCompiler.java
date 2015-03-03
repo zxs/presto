@@ -21,10 +21,10 @@ import com.facebook.presto.operator.scalar.MathFunctions;
 import com.facebook.presto.operator.scalar.RegexpFunctions;
 import com.facebook.presto.operator.scalar.StringFunctions;
 import com.facebook.presto.spi.ConnectorSession;
+import com.facebook.presto.spi.type.SqlTimestamp;
 import com.facebook.presto.spi.type.SqlTimestampWithTimeZone;
 import com.facebook.presto.sql.tree.Extract.Field;
 import com.facebook.presto.type.LikeFunctions;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
@@ -60,7 +60,7 @@ import java.util.concurrent.Callable;
 
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.spi.type.DateTimeEncoding.packDateTimeWithZone;
-import static com.google.common.base.Charsets.UTF_8;
+import static com.facebook.presto.spi.type.TimeZoneKey.UTC_KEY;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.util.concurrent.MoreExecutors.listeningDecorator;
 import static com.google.common.util.concurrent.MoreExecutors.sameThreadExecutor;
@@ -68,6 +68,7 @@ import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.airlift.slice.Slices.utf8Slice;
 import static java.lang.Math.cos;
 import static java.lang.Runtime.getRuntime;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.Executors.newFixedThreadPool;
 import static org.joda.time.DateTimeZone.UTC;
 import static org.testng.Assert.assertTrue;
@@ -122,7 +123,7 @@ public class TestExpressionCompiler
     {
         Logging.initialize();
         if (PARALLEL) {
-            executor = listeningDecorator(newFixedThreadPool(getRuntime().availableProcessors() * 2, daemonThreadsNamed("completer-%d")));
+            executor = listeningDecorator(newFixedThreadPool(getRuntime().availableProcessors() * 2, daemonThreadsNamed("completer-%s")));
         }
         else {
             executor = listeningDecorator(sameThreadExecutor());
@@ -543,9 +544,15 @@ public class TestExpressionCompiler
         assertExecute("try_cast('123' as bigint)", 123L);
         assertExecute("try_cast('foo' as varchar)", "foo");
         assertExecute("try_cast('foo' as bigint)", null);
+        assertExecute("try_cast('2001-08-22' as timestamp)", new SqlTimestamp(new DateTime(2001, 8, 22, 0, 0, 0, 0, UTC).getMillis(), UTC_KEY));
         assertExecute("try_cast(bound_string as bigint)", null);
+        assertExecute("try_cast(cast(null as varchar) as bigint)", null);
+        assertExecute("try_cast(bound_long / 13  as bigint)", 94);
         assertExecute("coalesce(try_cast('123' as bigint), 456)", 123L);
         assertExecute("coalesce(try_cast('foo' as bigint), 456)", 456L);
+        assertExecute("concat('foo', cast('bar' as varchar))", "foobar");
+        assertExecute("try_cast(try_cast(123 as varchar) as bigint)", 123L);
+        assertExecute("try_cast('foo' as varchar) || try_cast('bar' as varchar)", "foobar");
 
         Futures.allAsList(futures).get();
     }
@@ -819,25 +826,11 @@ public class TestExpressionCompiler
         assertExecute("bound_long in (1234, " + Joiner.on(", ").join(longValues) + ")", true);
         assertExecute("bound_long in (" + Joiner.on(", ").join(longValues) + ")", false);
 
-        Iterable<Object> doubleValues = transform(ContiguousSet.create(Range.openClosed(2000, 7000), DiscreteDomain.integers()), new Function<Integer, Object>()
-        {
-            @Override
-            public Object apply(Integer i)
-            {
-                return (double) i;
-            }
-        });
+        Iterable<Object> doubleValues = transform(ContiguousSet.create(Range.openClosed(2000, 7000), DiscreteDomain.integers()), i -> (double) i);
         assertExecute("bound_double in (12.34, " + Joiner.on(", ").join(doubleValues) + ")", true);
         assertExecute("bound_double in (" + Joiner.on(", ").join(doubleValues) + ")", false);
 
-        Iterable<Object> stringValues = transform(ContiguousSet.create(Range.openClosed(2000, 7000), DiscreteDomain.integers()), new Function<Integer, Object>()
-        {
-            @Override
-            public Object apply(Integer i)
-            {
-                return "'" + i + "'";
-            }
-        });
+        Iterable<Object> stringValues = transform(ContiguousSet.create(Range.openClosed(2000, 7000), DiscreteDomain.integers()), i -> "'" + i + "'");
         assertExecute("bound_string in ('hello', " + Joiner.on(", ").join(stringValues) + ")", true);
         assertExecute("bound_string in (" + Joiner.on(", ").join(stringValues) + ")", false);
 
@@ -983,6 +976,9 @@ public class TestExpressionCompiler
             case DAY_OF_WEEK:
             case DOW:
                 return DateTimeFunctions.dayOfWeekFromTimestamp(session, value);
+            case YEAR_OF_WEEK:
+            case YOW:
+                return DateTimeFunctions.yearOfWeekFromTimestamp(session, value);
             case DAY_OF_YEAR:
             case DOY:
                 return DateTimeFunctions.dayOfYearFromTimestamp(session, value);

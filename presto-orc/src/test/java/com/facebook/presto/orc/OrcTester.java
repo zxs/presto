@@ -51,8 +51,6 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.util.Progressable;
 import org.joda.time.DateTimeZone;
 
-import javax.annotation.Nullable;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -70,6 +68,7 @@ import static com.facebook.presto.orc.OrcTester.Compression.ZLIB;
 import static com.facebook.presto.orc.OrcTester.Format.DWRF;
 import static com.facebook.presto.orc.OrcTester.Format.ORC_12;
 import static com.facebook.presto.orc.TestingOrcPredicate.createOrcPredicate;
+import static com.facebook.presto.orc.Vector.MAX_VECTOR_LENGTH;
 import static com.google.common.base.Functions.constant;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Iterators.advance;
@@ -186,7 +185,7 @@ public class OrcTester
 
         // values wrapped in a struct wrapped in a struct
         if (complexStructuralTestsEnabled) {
-            testStructRoundTrip(createHiveStructInspector(objectInspector), transform(writeValues, toHiveStruct()), transform(readJsonStackValues, toObjectStruct()));
+            testStructRoundTrip(createHiveStructInspector(objectInspector), transform(writeValues, OrcTester::toHiveStruct), transform(readJsonStackValues, OrcTester::toObjectStruct));
         }
 
         // values wrapped in map
@@ -201,7 +200,7 @@ public class OrcTester
 
         // values wrapped in a list wrapped in a list
         if (complexStructuralTestsEnabled) {
-            testListRoundTrip(createHiveListInspector(objectInspector), transform(writeValues, toHiveList()), transform(readJsonStackValues, toObjectList()));
+            testListRoundTrip(createHiveListInspector(objectInspector), transform(writeValues, OrcTester::toHiveList), transform(readJsonStackValues, OrcTester::toObjectList));
         }
     }
 
@@ -209,18 +208,18 @@ public class OrcTester
             throws Exception
     {
         // values in simple struct
-        testRoundTripType(createHiveStructInspector(objectInspector), transform(writeValues, toHiveStruct()), transform(readJsonValues, toJsonStruct()));
+        testRoundTripType(createHiveStructInspector(objectInspector), transform(writeValues, OrcTester::toHiveStruct), transform(readJsonValues, OrcTester::toJsonStruct));
 
         if (structuralNullTestsEnabled) {
             // values and nulls in simple struct
             testRoundTripType(createHiveStructInspector(objectInspector),
-                    transform(insertNullEvery(5, writeValues), toHiveStruct()),
-                    transform(insertNullEvery(5, readJsonValues), toJsonStruct()));
+                    transform(insertNullEvery(5, writeValues), OrcTester::toHiveStruct),
+                    transform(insertNullEvery(5, readJsonValues), OrcTester::toJsonStruct));
 
             // all null values in simple struct
             testRoundTripType(createHiveStructInspector(objectInspector),
-                    transform(transform(writeValues, constant(null)), toHiveStruct()),
-                    transform(transform(writeValues, constant(null)), toJsonStruct()));
+                    transform(transform(writeValues, constant(null)), OrcTester::toHiveStruct),
+                    transform(transform(writeValues, constant(null)), OrcTester::toJsonStruct));
         }
     }
 
@@ -232,18 +231,20 @@ public class OrcTester
         Object nullKeyRead = readJsonValues.iterator().next();
 
         // values in simple map
-        testRoundTripType(createHiveMapInspector(objectInspector), transform(writeValues, toHiveMap(nullKeyWrite)), transform(readJsonValues, toJsonMap(nullKeyRead)));
+        testRoundTripType(createHiveMapInspector(objectInspector),
+                transform(writeValues, value -> toHiveMap(nullKeyWrite, value)),
+                transform(readJsonValues, value -> toJsonMap(nullKeyRead, value)));
 
         if (structuralNullTestsEnabled) {
             // values and nulls in simple map
             testRoundTripType(createHiveMapInspector(objectInspector),
-                    transform(insertNullEvery(5, writeValues), toHiveMap(nullKeyWrite)),
-                    transform(insertNullEvery(5, readJsonValues), toJsonMap(nullKeyRead)));
+                    transform(insertNullEvery(5, writeValues), value -> toHiveMap(nullKeyWrite, value)),
+                    transform(insertNullEvery(5, readJsonValues), value -> toJsonMap(nullKeyRead, value)));
 
             // all null values in simple map
             testRoundTripType(createHiveMapInspector(objectInspector),
-                    transform(transform(writeValues, constant(null)), toHiveMap(nullKeyWrite)),
-                    transform(transform(readJsonValues, constant(null)), toJsonMap(nullKeyRead)));
+                    transform(transform(writeValues, constant(null)), value -> toHiveMap(nullKeyWrite, value)),
+                    transform(transform(readJsonValues, constant(null)), value -> toJsonMap(nullKeyRead, value)));
         }
     }
 
@@ -251,18 +252,18 @@ public class OrcTester
             throws Exception
     {
         // values in simple list
-        testRoundTripType(createHiveListInspector(objectInspector), transform(writeValues, toHiveList()), transform(readJsonValues, toJsonList()));
+        testRoundTripType(createHiveListInspector(objectInspector), transform(writeValues, OrcTester::toHiveList), transform(readJsonValues, OrcTester::toJsonList));
 
         if (structuralNullTestsEnabled) {
             // values and nulls in simple list
             testRoundTripType(createHiveListInspector(objectInspector),
-                    transform(insertNullEvery(5, writeValues), toHiveList()),
-                    transform(insertNullEvery(5, readJsonValues), toJsonList()));
+                    transform(insertNullEvery(5, writeValues), OrcTester::toHiveList),
+                    transform(insertNullEvery(5, readJsonValues), OrcTester::toJsonList));
 
             // all null values in simple list
             testRoundTripType(createHiveListInspector(objectInspector),
-                    transform(transform(writeValues, constant(null)), toHiveList()),
-                    transform(transform(readJsonValues, constant(null)), toJsonList()));
+                    transform(transform(writeValues, constant(null)), OrcTester::toHiveList),
+                    transform(transform(readJsonValues, constant(null)), OrcTester::toJsonList));
         }
     }
 
@@ -365,7 +366,7 @@ public class OrcTester
     private static Vector createResultsVector(ObjectInspector objectInspector)
     {
         if (!(objectInspector instanceof PrimitiveObjectInspector)) {
-            return new SliceVector();
+            return new SliceVector(MAX_VECTOR_LENGTH);
         }
 
         PrimitiveObjectInspector primitiveObjectInspector = (PrimitiveObjectInspector) objectInspector;
@@ -373,20 +374,20 @@ public class OrcTester
 
         switch (primitiveCategory) {
             case BOOLEAN:
-                return new BooleanVector();
+                return new BooleanVector(MAX_VECTOR_LENGTH);
             case BYTE:
             case SHORT:
             case INT:
             case LONG:
             case DATE:
             case TIMESTAMP:
-                return new LongVector();
+                return new LongVector(MAX_VECTOR_LENGTH);
             case FLOAT:
             case DOUBLE:
-                return new DoubleVector();
+                return new DoubleVector(MAX_VECTOR_LENGTH);
             case BINARY:
             case STRING:
-                return new SliceVector();
+                return new SliceVector(MAX_VECTOR_LENGTH);
             default:
                 throw new IllegalArgumentException("Unsupported types " + primitiveCategory);
         }
@@ -395,17 +396,12 @@ public class OrcTester
     private static OrcRecordReader createCustomOrcRecordReader(TempFile tempFile, MetadataReader metadataReader, OrcPredicate predicate)
             throws IOException
     {
-        OrcDataSource orcDataSource = new FileOrcDataSource(tempFile.getFile());
+        OrcDataSource orcDataSource = new FileOrcDataSource(tempFile.getFile(), new DataSize(1, Unit.MEGABYTE));
         OrcReader orcReader = new OrcReader(orcDataSource, metadataReader);
 
         assertEquals(orcReader.getColumnNames(), ImmutableList.of("test"));
 
-        return orcReader.createRecordReader(
-                ImmutableSet.of(0),
-                predicate,
-                0,
-                tempFile.getFile().length(),
-                HIVE_STORAGE_TIME_ZONE);
+        return orcReader.createRecordReader(ImmutableSet.of(0), predicate, HIVE_STORAGE_TIME_ZONE);
     }
 
     public static DataSize writeOrcColumn(File outputFile, Format format, Compression compression, ObjectInspector columnObjectInspector, Iterator<?> values)
@@ -578,55 +574,31 @@ public class OrcTester
         return getStandardStructObjectInspector(ImmutableList.of("a", "b"), ImmutableList.of(objectInspector, objectInspector));
     }
 
-    private static Function<Object, Object> toHiveStruct()
+    private static Object toHiveStruct(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                return new Object[] {input, input};
-            }
-        };
+        return new Object[] {input, input};
     }
 
-    private static Function<Object, Object> toJsonStruct()
+    private static Object toJsonStruct(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                if (input instanceof Float) {
-                    input = ((Float) input).doubleValue();
-                }
-                List<Object> data = new ArrayList<>();
-                data.add(input);
-                data.add(input);
-                return OBJECT_JSON_CODEC.toJson(data);
-            }
-        };
+        if (input instanceof Float) {
+            input = ((Float) input).doubleValue();
+        }
+        List<Object> data = new ArrayList<>();
+        data.add(input);
+        data.add(input);
+        return OBJECT_JSON_CODEC.toJson(data);
     }
 
-    private static Function<Object, Object> toObjectStruct()
+    private static Object toObjectStruct(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                if (input instanceof Float) {
-                    input = ((Float) input).doubleValue();
-                }
-                List<Object> data = new ArrayList<>();
-                data.add(input);
-                data.add(input);
-                return data;
-            }
-        };
+        if (input instanceof Float) {
+            input = ((Float) input).doubleValue();
+        }
+        List<Object> data = new ArrayList<>();
+        data.add(input);
+        data.add(input);
+        return data;
     }
 
     private static StandardMapObjectInspector createHiveMapInspector(ObjectInspector objectInspector)
@@ -634,46 +606,30 @@ public class OrcTester
         return getStandardMapObjectInspector(objectInspector, objectInspector);
     }
 
-    private static Function<Object, Object> toHiveMap(final Object nullKeyValue)
+    private static Object toHiveMap(final Object nullKeyValue, Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                Map<Object, Object> map = new HashMap<>();
-                if (input == null) {
-                    // json doesn't support null keys, so just write the nullKeyValue
-                    map.put(nullKeyValue, null);
-                }
-                else {
-                    map.put(input, input);
-                }
-                return map;
-            }
-        };
+        Map<Object, Object> map = new HashMap<>();
+        if (input == null) {
+            // json doesn't support null keys, so just write the nullKeyValue
+            map.put(nullKeyValue, null);
+        }
+        else {
+            map.put(input, input);
+        }
+        return map;
     }
 
-    private static Function<Object, Object> toJsonMap(final Object nullKeyValue)
+    private static Object toJsonMap(final Object nullKeyValue, Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                Map<Object, Object> map = new HashMap<>();
-                if (input == null) {
-                    // json doesn't support null keys, so just write the nullKeyValue
-                    map.put(nullKeyValue, null);
-                }
-                else {
-                    map.put(input, input);
-                }
-                return OBJECT_JSON_CODEC.toJson(map);
-            }
-        };
+        Map<Object, Object> map = new HashMap<>();
+        if (input == null) {
+            // json doesn't support null keys, so just write the nullKeyValue
+            map.put(nullKeyValue, null);
+        }
+        else {
+            map.put(input, input);
+        }
+        return OBJECT_JSON_CODEC.toJson(map);
     }
 
     private static StandardListObjectInspector createHiveListInspector(ObjectInspector objectInspector)
@@ -681,61 +637,37 @@ public class OrcTester
         return getStandardListObjectInspector(objectInspector);
     }
 
-    private static Function<Object, Object> toHiveList()
+    private static Object toHiveList(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                ArrayList<Object> list = new ArrayList<>(4);
-                for (int i = 0; i < 4; i++) {
-                    list.add(input);
-                }
-                return list;
-            }
-        };
+        ArrayList<Object> list = new ArrayList<>(4);
+        for (int i = 0; i < 4; i++) {
+            list.add(input);
+        }
+        return list;
     }
 
-    private static Function<Object, Object> toJsonList()
+    private static Object toJsonList(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                if (input instanceof Float) {
-                    input = ((Float) input).doubleValue();
-                }
-                ArrayList<Object> list = new ArrayList<>(4);
-                for (int i = 0; i < 4; i++) {
-                    list.add(input);
-                }
-                return OBJECT_JSON_CODEC.toJson(list);
-            }
-        };
+        if (input instanceof Float) {
+            input = ((Float) input).doubleValue();
+        }
+        ArrayList<Object> list = new ArrayList<>(4);
+        for (int i = 0; i < 4; i++) {
+            list.add(input);
+        }
+        return OBJECT_JSON_CODEC.toJson(list);
     }
 
-    private static Function<Object, Object> toObjectList()
+    private static Object toObjectList(Object input)
     {
-        return new Function<Object, Object>()
-        {
-            @Nullable
-            @Override
-            public Object apply(@Nullable Object input)
-            {
-                if (input instanceof Float) {
-                    input = ((Float) input).doubleValue();
-                }
-                ArrayList<Object> list = new ArrayList<>(4);
-                for (int i = 0; i < 4; i++) {
-                    list.add(input);
-                }
-                return list;
-            }
-        };
+        if (input instanceof Float) {
+            input = ((Float) input).doubleValue();
+        }
+        ArrayList<Object> list = new ArrayList<>(4);
+        for (int i = 0; i < 4; i++) {
+            list.add(input);
+        }
+        return list;
     }
 
     public static boolean hasType(ObjectInspector objectInspector, PrimitiveCategory... types)

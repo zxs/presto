@@ -24,7 +24,6 @@ import com.facebook.presto.spi.Domain;
 import com.facebook.presto.spi.TupleDomain;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.plan.AggregationNode;
-import com.facebook.presto.sql.planner.plan.ExchangeNode;
 import com.facebook.presto.sql.planner.plan.FilterNode;
 import com.facebook.presto.sql.planner.plan.IndexJoinNode;
 import com.facebook.presto.sql.planner.plan.IndexSourceNode;
@@ -35,9 +34,9 @@ import com.facebook.presto.sql.planner.plan.OutputNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.PlanVisitor;
 import com.facebook.presto.sql.planner.plan.ProjectNode;
+import com.facebook.presto.sql.planner.plan.RemoteSourceNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
-import com.facebook.presto.sql.planner.plan.SinkNode;
 import com.facebook.presto.sql.planner.plan.SortNode;
 import com.facebook.presto.sql.planner.plan.TableCommitNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
@@ -46,11 +45,11 @@ import com.facebook.presto.sql.planner.plan.TopNNode;
 import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import io.airlift.json.JsonCodec;
 
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -171,7 +170,7 @@ public final class JsonPlanPrinter
                 Column column = new Column(
                         columnMetadata.getName(),
                         columnMetadata.getType().toString(),
-                        Optional.fromNullable(SimpleDomain.fromDomain(domain)));
+                        Optional.ofNullable(SimpleDomain.fromDomain(domain)));
                 columnBuilder.add(column);
             }
             Input input = new Input(
@@ -202,7 +201,7 @@ public final class JsonPlanPrinter
                 Column column = new Column(
                         columnMetadata.getName(),
                         columnMetadata.getType().toString(),
-                        Optional.fromNullable(SimpleDomain.fromDomain(domain)));
+                        Optional.ofNullable(SimpleDomain.fromDomain(domain)));
                 columnBuilder.add(column);
             }
             Input input = new Input(
@@ -245,15 +244,9 @@ public final class JsonPlanPrinter
         }
 
         @Override
-        public Void visitExchange(ExchangeNode node, Void context)
+        public Void visitRemoteSource(RemoteSourceNode node, Void context)
         {
             return null;
-        }
-
-        @Override
-        public Void visitSink(SinkNode node, Void context)
-        {
-            return processChildren(node);
         }
 
         @Override

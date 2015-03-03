@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableMap;
 
 import java.net.URI;
 import java.nio.charset.CharsetEncoder;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -38,31 +39,48 @@ public class ClientSession
     private final Map<String, String> properties;
     private final boolean debug;
 
-    public static ClientSession withCatalog(ClientSession session, String catalog)
+    public static ClientSession withCatalogAndSchema(ClientSession session, String catalog, String schema)
     {
         return new ClientSession(
                 session.getServer(),
                 session.getUser(),
                 session.getSource(),
                 catalog,
-                session.getSchema(),
+                schema,
                 session.getTimeZoneId(),
                 session.getLocale(),
                 session.getProperties(),
                 session.isDebug());
     }
 
-    public static ClientSession withSchema(ClientSession session, String schema)
+    public static ClientSession withSessionProperties(ClientSession session, Map<String, String> sessionProperties)
+    {
+        Map<String, String> properties = new HashMap<>(session.getProperties());
+        properties.putAll(sessionProperties);
+
+        return new ClientSession(
+                session.getServer(),
+                session.getUser(),
+                session.getSource(),
+                session.getCatalog(),
+                session.getSchema(),
+                session.getTimeZoneId(),
+                session.getLocale(),
+                properties,
+                session.isDebug());
+    }
+
+    public static ClientSession withProperties(ClientSession session, Map<String, String> properties)
     {
         return new ClientSession(
                 session.getServer(),
                 session.getUser(),
                 session.getSource(),
                 session.getCatalog(),
-                schema,
+                session.getSchema(),
                 session.getTimeZoneId(),
                 session.getLocale(),
-                session.getProperties(),
+                properties,
                 session.isDebug());
     }
 
@@ -76,7 +94,7 @@ public class ClientSession
         this.locale = locale;
         this.timeZoneId = checkNotNull(timeZoneId, "timeZoneId is null");
         this.debug = debug;
-        this.properties = ImmutableMap.copyOf(checkNotNull(properties, "options is null"));
+        this.properties = ImmutableMap.copyOf(checkNotNull(properties, "properties is null"));
 
         // verify the properties are valid
         CharsetEncoder charsetEncoder = US_ASCII.newEncoder();

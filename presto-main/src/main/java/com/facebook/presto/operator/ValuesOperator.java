@@ -17,12 +17,10 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
-import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.Iterator;
 import java.util.List;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
@@ -75,7 +73,6 @@ public class ValuesOperator
         this.types = ImmutableList.copyOf(checkNotNull(types, "types is null"));
 
         checkNotNull(pages, "pages is null");
-        checkArgument(!pages.isEmpty(), "pages is empty");
 
         this.pages = ImmutableList.copyOf(pages).iterator();
     }
@@ -102,12 +99,6 @@ public class ValuesOperator
     public boolean isFinished()
     {
         return !pages.hasNext();
-    }
-
-    @Override
-    public ListenableFuture<?> isBlocked()
-    {
-        return NOT_BLOCKED;
     }
 
     @Override
