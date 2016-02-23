@@ -19,12 +19,27 @@ import com.facebook.presto.spi.predicate.Range;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.BooleanType;
+import com.facebook.presto.spi.type.DateType;
 import com.facebook.presto.spi.type.DoubleType;
+import com.facebook.presto.spi.type.TimeType;
+import com.facebook.presto.spi.type.TimestampType;
 import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.spi.type.VarbinaryType;
+import com.facebook.presto.spi.type.VarcharType;
+import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.ObjectArrays;
+import io.airlift.slice.Slice;
 
+import javax.annotation.Nullable;
+import java.sql.Date;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -43,7 +58,7 @@ public class QueryBuilder
         this.quote = requireNonNull(quote, "quote is null");
     }
 
-    public String buildSql(String catalog, String schema, String table, List<JdbcColumnHandle> columns, TupleDomain<ColumnHandle> tupleDomain)
+    public JdbcSqlParameters buildSql(String catalog, String schema, String table, List<JdbcColumnHandle> columns, TupleDomain<ColumnHandle> tupleDomain)
     {
         StringBuilder sql = new StringBuilder();
 
@@ -61,32 +76,32 @@ public class QueryBuilder
             sql.append(quote(schema)).append('.');
         }
         sql.append(quote(table));
-
-        List<String> clauses = toConjuncts(columns, tupleDomain);
+        List<Object> parameters = Lists.newArrayList();
+        List<String> clauses = toConjuncts(columns, tupleDomain, parameters);
         if (!clauses.isEmpty()) {
             sql.append(" WHERE ")
                     .append(Joiner.on(" AND ").join(clauses));
         }
 
-        return sql.toString();
+        return new JdbcSqlParameters(sql.toString(), parameters);
     }
 
-    private List<String> toConjuncts(List<JdbcColumnHandle> columns, TupleDomain<ColumnHandle> tupleDomain)
+    private List<String> toConjuncts(List<JdbcColumnHandle> columns, TupleDomain<ColumnHandle> tupleDomain, List<Object> parameters)
     {
         ImmutableList.Builder<String> builder = ImmutableList.builder();
         for (JdbcColumnHandle column : columns) {
             Type type = column.getColumnType();
-            if (type.equals(BigintType.BIGINT) || type.equals(DoubleType.DOUBLE) || type.equals(BooleanType.BOOLEAN)) {
+            if (type.equals(BigintType.BIGINT) || type.equals(DoubleType.DOUBLE) || type.equals(BooleanType.BOOLEAN) || type.equals(VarcharType.VARCHAR)) {
                 Domain domain = tupleDomain.getDomains().get().get(column);
                 if (domain != null) {
-                    builder.add(toPredicate(column.getColumnName(), domain));
+                    builder.add(toPredicate(column.getColumnName(), type, domain, parameters));
                 }
             }
         }
         return builder.build();
     }
 
-    private String toPredicate(String columnName, Domain domain)
+    private String toPredicate(String columnName, Type columnType, Domain domain, List<Object> parameters)
     {
         checkArgument(domain.getType().isOrderable(), "Domain type must be orderable");
 
@@ -110,10 +125,12 @@ public class QueryBuilder
                 if (!range.getLow().isLowerUnbounded()) {
                     switch (range.getLow().getBound()) {
                         case ABOVE:
-                            rangeConjuncts.add(toPredicate(columnName, ">", range.getLow().getValue()));
+                            rangeConjuncts.add(toPredicate(columnName, "> ?"/*range.getLow().getValue()*/));
+                            parameters.add(encode(range.getLow().getValue(), columnType));
                             break;
                         case EXACTLY:
-                            rangeConjuncts.add(toPredicate(columnName, ">=", range.getLow().getValue()));
+                            rangeConjuncts.add(toPredicate(columnName, ">= ?"/*range.getLow().getValue()*/));
+                            parameters.add(encode(range.getLow().getValue(), columnType));
                             break;
                         case BELOW:
                             throw new IllegalArgumentException("Low Marker should never use BELOW bound: " + range);
@@ -126,10 +143,12 @@ public class QueryBuilder
                         case ABOVE:
                             throw new IllegalArgumentException("High Marker should never use ABOVE bound: " + range);
                         case EXACTLY:
-                            rangeConjuncts.add(toPredicate(columnName, "<=", range.getHigh().getValue()));
+                            rangeConjuncts.add(toPredicate(columnName, "<= ?"/*, range.getHigh().getValue()*/));
+                            parameters.add(encode(range.getHigh().getValue(), columnType));
                             break;
                         case BELOW:
-                            rangeConjuncts.add(toPredicate(columnName, "<", range.getHigh().getValue()));
+                            rangeConjuncts.add(toPredicate(columnName, "< ?"/*, range.getHigh().getValue()*/));
+                            parameters.add(encode(range.getHigh().getValue(), columnType));
                             break;
                         default:
                             throw new AssertionError("Unhandled bound: " + range.getHigh().getBound());
@@ -143,10 +162,15 @@ public class QueryBuilder
 
         // Add back all of the possible single values either as an equality or an IN predicate
         if (singleValues.size() == 1) {
-            disjuncts.add(toPredicate(columnName, "=", getOnlyElement(singleValues)));
+            disjuncts.add(toPredicate(columnName, "= ?"/*, getOnlyElement(singleValues)*/));
+            parameters.add(encode(getOnlyElement(singleValues), columnType));
         }
         else if (singleValues.size() > 1) {
-            disjuncts.add(quote(columnName) + " IN (" + Joiner.on(",").join(transform(singleValues, QueryBuilder::encode)) + ")");
+            String[] tbd = ObjectArrays.newArray(String.class, singleValues.size());
+            Arrays.fill(tbd, "?");
+            disjuncts.add(quote(columnName) + " IN (" + Joiner.on(",").join(tbd/*transform(singleValues, encode())*/) + ")");
+            MyFunction myFunc = new MyFunction(columnType);
+            Iterators.addAll(parameters, transform(singleValues, myFunc).iterator());
         }
 
         // Add nullability disjuncts
@@ -158,9 +182,9 @@ public class QueryBuilder
         return "(" + Joiner.on(" OR ").join(disjuncts) + ")";
     }
 
-    private String toPredicate(String columnName, String operator, Object value)
+    private String toPredicate(String columnName, String operator/*, Object value*/)
     {
-        return quote(columnName) + " " + operator + " " + encode(value);
+        return quote(columnName) + " " + operator + " "/* + encode(value)*/;
     }
 
     private String quote(String name)
@@ -169,11 +193,56 @@ public class QueryBuilder
         return quote + name + quote;
     }
 
-    private static String encode(Object value)
+    private Object encode(Object value, Type type)
     {
+        String valueStr = null;
         if (value instanceof Number || value instanceof Boolean) {
-            return value.toString();
+            valueStr = value.toString();
         }
-        throw new UnsupportedOperationException("Can't handle type: " + value.getClass().getName());
+        if (value instanceof Slice && ((Slice) value).getBase() instanceof byte[]) {
+          valueStr = new String((byte[]) (((Slice) value).getBase()));
+        }
+        // jdbc sql type convert
+        if (type.equals(BooleanType.BOOLEAN)) {
+          return Boolean.valueOf(valueStr);
+        }
+        else if (type.equals(BigintType.BIGINT)) {
+          return Long.valueOf(valueStr);
+        }
+        else if (type.equals(DoubleType.DOUBLE)) {
+          return Double.valueOf(valueStr);
+        }
+        else if (type.equals(VarcharType.VARCHAR)) {
+          return valueStr;
+        }
+        else if (type.equals(VarbinaryType.VARBINARY)) {
+          // nothing to do
+        }
+        else if (type.equals(DateType.DATE)) {
+          return Date.valueOf(valueStr);
+        }
+        else if (type.equals(TimeType.TIME)) {
+          return Time.valueOf(valueStr);
+        }
+        else if (type.equals(TimestampType.TIMESTAMP)) {
+          return Timestamp.valueOf(valueStr);
+        }
+        throw new UnsupportedOperationException("Can't handle type: " + value.getClass().getName() + type);
+    }
+
+    private class MyFunction implements Function<Object, Object>
+    {
+        private Type type;
+        public MyFunction(Type type)
+        {
+            this.type = type;
+        }
+
+        @Nullable
+        @Override
+        public Object apply(@Nullable Object value)
+        {
+            return encode(value, type);
+        }
     }
 }

@@ -13,6 +13,10 @@
  */
 package com.facebook.presto.plugin.jdbc;
 
+import com.facebook.presto.spi.ConnectorMetadata;
+import com.facebook.presto.spi.ConnectorRecordSetProvider;
+import com.facebook.presto.spi.ConnectorRecordSinkProvider;
+import com.facebook.presto.spi.ConnectorSplitManager;
 import com.google.inject.Binder;
 import com.google.inject.Module;
 import com.google.inject.Scopes;
@@ -34,10 +38,10 @@ public class JdbcModule
     public void configure(Binder binder)
     {
         binder.bind(JdbcConnectorId.class).toInstance(new JdbcConnectorId(connectorId));
-        binder.bind(JdbcMetadata.class).in(Scopes.SINGLETON);
-        binder.bind(JdbcSplitManager.class).in(Scopes.SINGLETON);
-        binder.bind(JdbcRecordSetProvider.class).in(Scopes.SINGLETON);
-        binder.bind(JdbcRecordSinkProvider.class).in(Scopes.SINGLETON);
+        binder.bind(ConnectorMetadata.class).to(JdbcMetadata.class).in(Scopes.SINGLETON);
+        binder.bind(ConnectorSplitManager.class).to(JdbcSplitManager.class).in(Scopes.SINGLETON);
+        binder.bind(ConnectorRecordSetProvider.class).to(JdbcRecordSetProvider.class).in(Scopes.SINGLETON);
+        binder.bind(ConnectorRecordSinkProvider.class).to(JdbcRecordSinkProvider.class).in(Scopes.SINGLETON);
         binder.bind(JdbcConnector.class).in(Scopes.SINGLETON);
         configBinder(binder).bindConfig(JdbcMetadataConfig.class);
     }

@@ -103,7 +103,8 @@ public class PrestoConnection
             throws SQLException
     {
         checkOpen();
-        throw new NotImplementedException("Connection", "prepareStatement");
+        return new PrestoPreparedStatement(this, sql);
+        //throw new NotImplementedException("Connection", "prepareStatement");
     }
 
     @Override
@@ -629,16 +630,18 @@ public class PrestoConnection
             throw new SQLException("Invalid path segments in URL: " + uri);
         }
 
-        if (parts.get(0).isEmpty()) {
-            throw new SQLException("Catalog name is empty: " + uri);
+        if (!parts.get(0).isEmpty()) {
+            catalog.set(parts.get(0));
         }
-        catalog.set(parts.get(0));
+        else {
+            catalog.set("default");
+        }
 
-        if (parts.size() > 1) {
-            if (parts.get(1).isEmpty()) {
-                throw new SQLException("Schema name is empty: " + uri);
-            }
+        if (parts.size() > 1 && !parts.get(1).isEmpty()) {
             schema.set(parts.get(1));
+        }
+        else {
+            schema.set("default");
         }
     }
 

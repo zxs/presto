@@ -31,18 +31,18 @@ public class JdbcConnector
     private static final Logger log = Logger.get(JdbcConnector.class);
 
     private final LifeCycleManager lifeCycleManager;
-    private final JdbcMetadata jdbcMetadata;
-    private final JdbcSplitManager jdbcSplitManager;
-    private final JdbcRecordSetProvider jdbcRecordSetProvider;
-    private final JdbcRecordSinkProvider jdbcRecordSinkProvider;
+    private final ConnectorMetadata jdbcMetadata;
+    private final ConnectorSplitManager jdbcSplitManager;
+    private final ConnectorRecordSetProvider jdbcRecordSetProvider;
+    private final ConnectorRecordSinkProvider jdbcRecordSinkProvider;
 
     @Inject
     public JdbcConnector(
             LifeCycleManager lifeCycleManager,
-            JdbcMetadata jdbcMetadata,
-            JdbcSplitManager jdbcSplitManager,
-            JdbcRecordSetProvider jdbcRecordSetProvider,
-            JdbcRecordSinkProvider jdbcRecordSinkProvider)
+            ConnectorMetadata jdbcMetadata,
+            ConnectorSplitManager jdbcSplitManager,
+            ConnectorRecordSetProvider jdbcRecordSetProvider,
+            ConnectorRecordSinkProvider jdbcRecordSinkProvider)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.jdbcMetadata = requireNonNull(jdbcMetadata, "jdbcMetadata is null");

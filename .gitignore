@@ -20,5 +20,7 @@ benchmark_outputs
 *.pyc
 *.class
 .checkstyle
+
+**/*.uml
 *-local.yaml
 .mvn/timing.properties

@@ -16,12 +16,21 @@ package com.facebook.presto.plugin.jdbc;
 import com.facebook.presto.spi.Connector;
 import com.facebook.presto.spi.ConnectorFactory;
 import com.facebook.presto.spi.ConnectorHandleResolver;
+import com.facebook.presto.spi.ConnectorMetadata;
+import com.facebook.presto.spi.ConnectorRecordSetProvider;
+import com.facebook.presto.spi.ConnectorRecordSinkProvider;
+import com.facebook.presto.spi.ConnectorSplitManager;
+import com.facebook.presto.spi.classloader.ClassLoaderSafeConnectorMetadata;
+import com.facebook.presto.spi.classloader.ClassLoaderSafeConnectorRecordSetProvider;
+import com.facebook.presto.spi.classloader.ClassLoaderSafeConnectorRecordSinkProvider;
+import com.facebook.presto.spi.classloader.ClassLoaderSafeConnectorSplitManager;
 import com.facebook.presto.spi.classloader.ThreadContextClassLoader;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Injector;
 import com.google.inject.Module;
 import io.airlift.bootstrap.Bootstrap;
+import io.airlift.bootstrap.LifeCycleManager;
 
 import java.util.Map;
 
@@ -74,7 +83,21 @@ public class JdbcConnectorFactory
                     .setOptionalConfigurationProperties(optionalConfig)
                     .initialize();
 
-            return injector.getInstance(JdbcConnector.class);
+            LifeCycleManager lifeCycleManager = injector.getInstance(LifeCycleManager.class);
+            ConnectorMetadata connectorMetadata = injector.getInstance(ConnectorMetadata.class);
+            ConnectorSplitManager connectorSplitManager = injector.getInstance(ConnectorSplitManager.class);
+            ConnectorRecordSetProvider connectorRecordSetProvider = injector.getInstance(ConnectorRecordSetProvider.class);
+            ConnectorHandleResolver connectorHandleResolver = injector.getInstance(ConnectorHandleResolver.class);
+            ConnectorRecordSinkProvider connectorRecordSinkProvider = injector.getInstance(ConnectorRecordSinkProvider.class);
+
+            return new JdbcConnector(
+                lifeCycleManager,
+                new ClassLoaderSafeConnectorMetadata(connectorMetadata, classLoader),
+                new ClassLoaderSafeConnectorSplitManager(connectorSplitManager, classLoader),
+                new ClassLoaderSafeConnectorRecordSetProvider(connectorRecordSetProvider, classLoader),
+                new ClassLoaderSafeConnectorRecordSinkProvider(connectorRecordSinkProvider, classLoader));
+
+            //return injector.getInstance(JdbcConnector.class);
         }
         catch (Exception e) {
             throw Throwables.propagate(e);

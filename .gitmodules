@@ -1,0 +1,14 @@
+[submodule "presto-assembly/presto-csd"]
+	path = presto-assembly/presto-csd
+	url = ./presto-assembly/presto-csd/
+[submodule "presto-assembly/presto-parcel"]
+	path = presto-assembly/presto-parcel
+	url = ./presto-assembly/presto-parcel
+
+[submodule "presto-shaded/presto-hadoop-shaded"]
+	path = presto-shaded/presto-hadoop-shaded
+	url = ./presto-shaded/presto-hadoop-shaded
+
+[submodule "presto-shaded/presto-hive-shaded"]
+	path = presto-shaded/presto-hive-shaded
+	url = ./presto-shaded/presto-hive-shaded

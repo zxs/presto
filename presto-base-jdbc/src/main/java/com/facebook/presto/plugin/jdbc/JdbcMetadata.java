@@ -30,6 +30,7 @@ import com.facebook.presto.spi.SchemaTablePrefix;
 import com.facebook.presto.spi.TableNotFoundException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import io.airlift.slice.Slice;
 
 import javax.inject.Inject;
@@ -119,13 +120,21 @@ public class JdbcMetadata
     public Map<SchemaTableName, List<ColumnMetadata>> listTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTableName tableName : listTables(session, prefix.getSchemaName())) {
+        List<SchemaTableName> listTables = Lists.newArrayList();
+        if (prefix.getSchemaName() != null && prefix.getTableName() != null) {
+            listTables.add(new SchemaTableName(prefix.getSchemaName(), prefix.getTableName()));
+        }
+        else {
+            listTables.addAll(listTables(session, prefix.getSchemaName()));
+        }
+
+        for (SchemaTableName tableName : listTables) {
             try {
                 JdbcTableHandle tableHandle = jdbcClient.getTableHandle(tableName);
-                if (tableHandle == null) {
-                    continue;
+                // FIXED: Only Get columns of the table, exclude other tables
+                if (tableHandle != null && prefix.matches(tableHandle.getSchemaTableName())) {
+                    columns.put(tableName, getTableMetadata(session, tableHandle).getColumns());
                 }
-                columns.put(tableName, getTableMetadata(session, tableHandle).getColumns());
             }
             catch (TableNotFoundException e) {
                 // table disappeared during listing operation

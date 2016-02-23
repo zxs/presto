@@ -246,7 +246,7 @@ public class BaseJdbcClient
     }
 
     @Override
-    public String buildSql(JdbcSplit split, List<JdbcColumnHandle> columnHandles)
+    public JdbcSqlParameters buildSql(JdbcSplit split, List<JdbcColumnHandle> columnHandles)
     {
         return new QueryBuilder(identifierQuote).buildSql(
                 split.getCatalogName(),
