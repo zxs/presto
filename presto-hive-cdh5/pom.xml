@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.facebook.presto</groupId>
         <artifactId>presto-root</artifactId>
-        <version>0.139</version>
+        <version>0.139-cdh5.5.2</version>
     </parent>
 
     <artifactId>presto-hive-cdh5</artifactId>
@@ -49,7 +49,7 @@
 
         <dependency>
             <groupId>com.facebook.presto.hadoop</groupId>
-            <artifactId>hadoop-apache2</artifactId>
+            <artifactId>hadoop-cdh5</artifactId>
             <scope>runtime</scope>
         </dependency>
 

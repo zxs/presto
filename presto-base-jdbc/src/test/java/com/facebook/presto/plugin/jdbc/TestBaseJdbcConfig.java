@@ -27,7 +27,8 @@ public class TestBaseJdbcConfig
         ConfigAssertions.assertRecordedDefaults(ConfigAssertions.recordDefaults(BaseJdbcConfig.class)
                 .setConnectionUrl(null)
                 .setConnectionUser(null)
-                .setConnectionPassword(null));
+                .setConnectionPassword(null)
+                .setConnectionInfo(null));
     }
 
     @Test
@@ -37,12 +38,14 @@ public class TestBaseJdbcConfig
                 .put("connection-url", "jdbc:h2:mem:config")
                 .put("connection-user", "user")
                 .put("connection-password", "password")
-                .build();
+                .put("connection-info", "f1,f2")
+            .build();
 
         BaseJdbcConfig expected = new BaseJdbcConfig()
                 .setConnectionUrl("jdbc:h2:mem:config")
                 .setConnectionUser("user")
-                .setConnectionPassword("password");
+                .setConnectionPassword("password")
+                .setConnectionInfo("f1,f2");
 
         ConfigAssertions.assertFullMapping(properties, expected);
     }

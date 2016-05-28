@@ -26,9 +26,9 @@ import javax.inject.Inject;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Set;
 
 import static java.util.Locale.ENGLISH;
@@ -73,10 +73,10 @@ public class MySqlClient
     }
 
     @Override
-    public Statement getStatement(Connection connection)
+    public PreparedStatement prepareStatement(Connection connection, String sql)
             throws SQLException
     {
-        Statement statement = connection.createStatement();
+        PreparedStatement statement = connection.prepareStatement(sql);
         if (statement.isWrapperFor(com.mysql.jdbc.Statement.class)) {
             statement.unwrap(com.mysql.jdbc.Statement.class).enableStreamingResults();
         }

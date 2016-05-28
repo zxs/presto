@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.facebook.presto</groupId>
+        <artifactId>presto-root</artifactId>
+        <version>0.139-cdh5.5.2</version>
+    </parent>
+
+    <artifactId>presto-shaded</artifactId>
+    <packaging>pom</packaging>
+
+
+    <properties>
+
+        <air.check.skip-checkstyle>true</air.check.skip-checkstyle>
+        <air.check.skip-license>true</air.check.skip-license>
+        <air.check.skip-dependency>true</air.check.skip-dependency>
+        <air.check.skip-duplicate-finder>true</air.check.skip-duplicate-finder>
+        <air.check.skip-dependency-version-check>true</air.check.skip-dependency-version-check>
+        <air.check.skip-extended>true</air.check.skip-extended>
+
+    </properties>
+
+
+    <modules>
+        <module>presto-hadoop-shaded</module>
+        <module>presto-hive-shaded</module>
+        <module>presto-hive-jdbc</module>
+    </modules>
+</project>

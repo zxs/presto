@@ -33,23 +33,35 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.Map;
 
 public class PrestoPreparedStatement
         extends PrestoStatement
         implements PreparedStatement
 {
+    private final String sql;
+    private String executedSQL;
+    /**
+     * save the SQL parameters {paramLoc:paramValue}
+     */
+    private final HashMap<Integer, String> parameters = new HashMap<Integer, String>();
+
     PrestoPreparedStatement(PrestoConnection connection, String sql)
             throws SQLException
     {
         super(connection);
+        this.sql = sql;
     }
 
     @Override
     public ResultSet executeQuery()
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "executeQuery");
+        executedSQL = updateSql(sql, parameters);
+        return super.executeQuery(executedSQL);
     }
 
     @Override
@@ -70,7 +82,7 @@ public class PrestoPreparedStatement
     public void setBoolean(int parameterIndex, boolean x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setBoolean");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
@@ -84,35 +96,35 @@ public class PrestoPreparedStatement
     public void setShort(int parameterIndex, short x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setShort");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setInt(int parameterIndex, int x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setInt");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setLong(int parameterIndex, long x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setLong");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setFloat(int parameterIndex, float x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setFloat");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setDouble(int parameterIndex, double x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setDouble");
+      this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
@@ -126,7 +138,8 @@ public class PrestoPreparedStatement
     public void setString(int parameterIndex, String x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setString");
+      x = x.replace("'", "\\'");
+      this.parameters.put(parameterIndex, "'" + x + "'");
     }
 
     @Override
@@ -140,21 +153,21 @@ public class PrestoPreparedStatement
     public void setDate(int parameterIndex, Date x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setDate");
+      this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
     public void setTime(int parameterIndex, Time x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setTime");
+      this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
     public void setTimestamp(int parameterIndex, Timestamp x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setTimestamp");
+      this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
@@ -182,28 +195,53 @@ public class PrestoPreparedStatement
     public void clearParameters()
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "clearParameters");
+      this.parameters.clear();
     }
 
     @Override
     public void setObject(int parameterIndex, Object x, int targetSqlType)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setObject");
+        switch (targetSqlType) {
+            case Types.BOOLEAN:
+            case Types.SMALLINT:
+            case Types.INTEGER:
+            case Types.BIGINT:
+            case Types.FLOAT:
+            case Types.DOUBLE:
+            case Types.DATE:
+            case Types.TIME:
+            case Types.TIMESTAMP:
+            case Types.VARCHAR:
+                setObject(parameterIndex, x);
+                break;
+            default:
+                throw new NotImplementedException("setObject(" + parameterIndex + "," + x + "," + targetSqlType);
+        }
     }
 
     @Override
     public void setObject(int parameterIndex, Object x)
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "setObject");
+        if (isPrimitiveOrWrapper(x.getClass())
+                || x instanceof Date || x instanceof Time || x instanceof Timestamp) {
+            this.parameters.put(parameterIndex, "" + x);
+            return;
+        }
+        if (x instanceof String) {
+            setString(parameterIndex, "" + x);
+            return;
+        }
+        throw new NotImplementedException("setObject(" + parameterIndex + "," + x);
     }
 
     @Override
     public boolean execute()
             throws SQLException
     {
-        throw new NotImplementedException("PreparedStatement", "execute");
+        executedSQL = updateSql(sql, parameters);
+        return super.execute(executedSQL);
     }
 
     @Override
@@ -435,5 +473,121 @@ public class PrestoPreparedStatement
             throws SQLException
     {
         throw new SQLException("This method cannot be called on PreparedStatement");
+    }
+
+    @Override
+    public void close() throws SQLException
+    {
+        clearParameters();
+        executedSQL = null;
+        super.close();
+    }
+
+    public String executedSQL()
+    {
+        return executedSQL;
+    }
+
+    /**
+     * update the SQL string with parameters set by setXXX methods of {@link PreparedStatement}
+     *
+     * @param sql
+     * @param parameters
+     * @return updated SQL string
+     */
+    private String updateSql(final String sql, HashMap<Integer, String> parameters)
+    {
+        if (!sql.contains("?")) {
+            return sql;
+        }
+
+        StringBuilder newSql = new StringBuilder(sql);
+
+        int paramLoc = 1;
+        while (getCharIndexFromSqlByParamLocation(sql, '?', paramLoc) > 0) {
+            // check the user has set the needs parameters
+            if (parameters.containsKey(paramLoc)) {
+                int tt = getCharIndexFromSqlByParamLocation(newSql.toString(), '?', 1);
+                newSql.deleteCharAt(tt);
+                newSql.insert(tt, parameters.get(paramLoc));
+            }
+            paramLoc++;
+        }
+
+        return newSql.toString();
+    }
+
+    /**
+     * Get the index of given char from the SQL string by parameter location
+     * </br> The -1 will be return, if nothing found
+     *
+     * @param sql
+     * @param cchar
+     * @param paramLoc
+     * @return
+     */
+    private int getCharIndexFromSqlByParamLocation(final String sql, final char cchar, final int paramLoc)
+    {
+        int signalCount = 0;
+        int charIndex = -1;
+        int num = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '\'' || c == '\\') { // record the count of char "'" and char "\"
+                signalCount++;
+            }
+            else if (c == cchar && signalCount % 2 == 0) { // check if the ? is really the parameter
+                num++;
+                if (num == paramLoc) {
+                    charIndex = i;
+                    break;
+                }
+            }
+        }
+        return charIndex;
+    }
+
+    /**
+     * Maps primitive {@code Class}es to their corresponding wrapper {@code Class}.
+     */
+    private static final Map<Class<?>, Class<?>> primitiveWrapperMap = new HashMap<Class<?>, Class<?>>();
+
+    static {
+        primitiveWrapperMap.put(Boolean.TYPE, Boolean.class);
+        primitiveWrapperMap.put(Byte.TYPE, Byte.class);
+        primitiveWrapperMap.put(Character.TYPE, Character.class);
+        primitiveWrapperMap.put(Short.TYPE, Short.class);
+        primitiveWrapperMap.put(Integer.TYPE, Integer.class);
+        primitiveWrapperMap.put(Long.TYPE, Long.class);
+        primitiveWrapperMap.put(Double.TYPE, Double.class);
+        primitiveWrapperMap.put(Float.TYPE, Float.class);
+        primitiveWrapperMap.put(Void.TYPE, Void.TYPE);
+    }
+
+    /**
+     * Maps wrapper {@code Class}es to their corresponding primitive types.
+     */
+    private static final Map<Class<?>, Class<?>> wrapperPrimitiveMap = new HashMap<Class<?>, Class<?>>();
+
+    static {
+        for (Class<?> primitiveClass : primitiveWrapperMap.keySet()) {
+            Class<?> wrapperClass = primitiveWrapperMap.get(primitiveClass);
+            if (!primitiveClass.equals(wrapperClass)) {
+                wrapperPrimitiveMap.put(wrapperClass, primitiveClass);
+            }
+        }
+    }
+
+    private static boolean isPrimitiveOrWrapper(Class<?> type)
+    {
+        if (type == null) {
+            return false;
+        }
+        return type.isPrimitive() || isPrimitiveWrapper(type);
+    }
+
+    private static boolean isPrimitiveWrapper(Class<?> type)
+    {
+        return wrapperPrimitiveMap.containsKey(type);
     }
 }

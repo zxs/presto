@@ -43,19 +43,19 @@
             <unpack />
         </artifact>
     </artifactSet>
-
+<!--
     <artifactSet to="plugin/hive-cdh4">
         <artifact id="${project.groupId}:presto-hive-cdh4:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
-
+-->
     <artifactSet to="plugin/hive-cdh5">
         <artifact id="${project.groupId}:presto-hive-cdh5:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
-
+<!--
     <artifactSet to="plugin/hive-hadoop1">
         <artifact id="${project.groupId}:presto-hive-hadoop1:zip:${project.version}">
             <unpack />
@@ -67,12 +67,13 @@
             <unpack />
         </artifact>
     </artifactSet>
-
+-->
     <artifactSet to="plugin/blackhole">
         <artifact id="${project.groupId}:presto-blackhole:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
+
 
     <artifactSet to="plugin/kafka">
         <artifact id="${project.groupId}:presto-kafka:zip:${project.version}">
@@ -94,6 +95,18 @@
 
     <artifactSet to="plugin/postgresql">
         <artifact id="${project.groupId}:presto-postgresql:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/impala">
+        <artifact id="${project.groupId}:presto-impala:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/phoenix">
+        <artifact id="${project.groupId}:presto-phoenix:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>

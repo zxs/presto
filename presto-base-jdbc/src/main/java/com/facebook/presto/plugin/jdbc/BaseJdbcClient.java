@@ -33,6 +33,7 @@ import javax.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.Driver;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -246,7 +247,7 @@ public class BaseJdbcClient
     }
 
     @Override
-    public String buildSql(JdbcSplit split, List<JdbcColumnHandle> columnHandles)
+    public JdbcSqlParameters buildSql(JdbcSplit split, List<JdbcColumnHandle> columnHandles)
     {
         return new QueryBuilder(identifierQuote).buildSql(
                 split.getCatalogName(),
@@ -369,10 +370,10 @@ public class BaseJdbcClient
     }
 
     @Override
-    public Statement getStatement(Connection connection)
+    public PreparedStatement prepareStatement(Connection connection, String sql)
             throws SQLException
     {
-        return connection.createStatement();
+        return connection.prepareStatement(sql);
     }
 
     protected ResultSet getTables(Connection connection, String schemaName, String tableName)

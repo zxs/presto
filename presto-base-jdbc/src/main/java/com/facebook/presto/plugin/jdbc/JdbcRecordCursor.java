@@ -29,6 +29,7 @@ import io.airlift.slice.Slice;
 import org.joda.time.chrono.ISOChronology;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -55,7 +56,7 @@ public class JdbcRecordCursor
     private final List<JdbcColumnHandle> columnHandles;
 
     private final Connection connection;
-    private final Statement statement;
+    private final PreparedStatement preparedStatement;
     private final ResultSet resultSet;
     private boolean closed;
 
@@ -63,13 +64,21 @@ public class JdbcRecordCursor
     {
         this.columnHandles = ImmutableList.copyOf(requireNonNull(columnHandles, "columnHandles is null"));
 
-        String sql = jdbcClient.buildSql(split, columnHandles);
+        JdbcSqlParameters sqlParams = jdbcClient.buildSql(split, columnHandles);
         try {
             connection = jdbcClient.getConnection(split);
-            statement = jdbcClient.getStatement(connection);
+            preparedStatement = jdbcClient.prepareStatement(connection, sqlParams.getSql());
+            preparedStatement.setFetchSize(1000);
 
-            log.debug("Executing: %s", sql);
-            resultSet = statement.executeQuery(sql);
+            log.debug("Executing: %s", sqlParams.getSql());
+            int i = 1;
+            for (Object p : sqlParams.getParams()) {
+              log.debug("%d : %s", i, p);
+              preparedStatement.setObject(i, p);
+
+              i++;
+            }
+            resultSet = preparedStatement.executeQuery();
         }
         catch (SQLException e) {
             throw handleSqlException(e);
@@ -230,9 +239,9 @@ public class JdbcRecordCursor
 
         // use try with resources to close everything properly
         try (Connection connection = this.connection;
-                Statement statement = this.statement;
-                ResultSet resultSet = this.resultSet) {
-            // do nothing
+             Statement statement = this.preparedStatement;
+             ResultSet resultSet = this.resultSet) {
+          // do nothing
         }
         catch (SQLException e) {
             throw Throwables.propagate(e);
