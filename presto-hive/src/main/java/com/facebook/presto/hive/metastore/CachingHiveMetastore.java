@@ -35,7 +35,7 @@ import com.google.common.util.concurrent.ExecutionError;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.airlift.units.Duration;
 import org.apache.hadoop.hive.common.FileUtils;
-import org.apache.hadoop.hive.metastore.TableType;
+//import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.Database;
@@ -72,7 +72,7 @@ import java.util.function.Function;
 
 import static com.facebook.presto.hive.HiveErrorCode.HIVE_METASTORE_ERROR;
 import static com.facebook.presto.hive.HiveUtil.PRESTO_VIEW_FLAG;
-import static com.facebook.presto.hive.HiveUtil.isPrestoView;
+//import static com.facebook.presto.hive.HiveUtil.isPrestoView;
 import static com.facebook.presto.hive.metastore.HivePrivilege.OWNERSHIP;
 import static com.facebook.presto.hive.metastore.HivePrivilege.parsePrivilege;
 import static com.google.common.base.MoreObjects.toStringHelper;
@@ -552,9 +552,11 @@ public class CachingHiveMetastore
                     .run("getTable", stats.getGetTable().wrap(() -> {
                         try (HiveMetastoreClient client = clientProvider.createMetastoreClient()) {
                             Table table = client.getTable(hiveTableName.getDatabaseName(), hiveTableName.getTableName());
+                            /*  ignore hive/presto view check @shenzx
                             if (table.getTableType().equals(TableType.VIRTUAL_VIEW.name()) && (!isPrestoView(table))) {
                                 throw new HiveViewNotSupportedException(new SchemaTableName(hiveTableName.getDatabaseName(), hiveTableName.getTableName()));
                             }
+                            */
                             return Optional.of(table);
                         }
                     }));
