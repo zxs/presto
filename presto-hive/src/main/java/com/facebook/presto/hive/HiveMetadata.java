@@ -286,6 +286,9 @@ public class HiveMetadata
             HiveStorageFormat format = extractHiveStorageFormat(table.get());
             properties.put(STORAGE_FORMAT_PROPERTY, format);
         }
+        catch (IllegalStateException ignored) {
+            // todo fail if format is not known
+        }
         catch (PrestoException ignored) {
             // todo fail if format is not known
         }
