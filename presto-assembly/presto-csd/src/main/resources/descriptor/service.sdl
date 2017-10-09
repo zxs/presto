@@ -1,0 +1,742 @@
+{
+  "name" : "PRESTO",
+  "label" : "Presto",
+  "description" : "Distributed SQL Query Engine for Big Data",
+  "version" : "${presto.version}",
+  "runAs" : {
+    "user" : "presto",
+    "group" : "presto"
+  },
+  "parcel" : {
+    "requiredTags" : [ "presto" ]
+  },
+  "inExpressWizard" : false,
+  "icon" : "images/icon.png",
+  "serviceDependencies" : [
+    {
+      "name" : "HIVE",
+      "required" : "false"
+    },
+    {
+      "name" : "IMPALA",
+      "required" : "false"
+    },
+    {
+      "name" : "PHOENIX",
+      "required" : "false"
+    }
+  ],
+  "commands" : [
+    {
+      "name" : "PrestoInitializeCoordinatorNodePropertiesCommand",
+      "label" : "Initialize Coordinator Node",
+      "description" : "Initialize Coordinator node.properties file.",
+      "roleName" : "PRESTO_COORDINATOR",
+      "roleCommand" : "coord_init",
+      "runMode" : "all"
+    },
+    {
+      "name" : "PrestoInitializeWorkerNodePropertiesCommand",
+      "label" : "Initialize Worker Node",
+      "description" : "Initialize Worker node.properties file.",
+      "roleName" : "PRESTO_WORKER",
+      "roleCommand" : "worker_init",
+      "runMode" : "all"
+    }
+  ],
+  "serviceInit" : {
+    "preStartSteps" : [
+      {
+        "commandName" : "PrestoInitializeCoordinatorNodePropertiesCommand"
+      },
+      {
+        "commandName" : "PrestoInitializeWorkerNodePropertiesCommand"
+      }
+    ]
+  },
+  "parameters" : [
+    {
+      "name" : "discovery_uri",
+      "label" : "Discovery URI",
+      "description" : "The URI to the Discovery server. This URI must not end in a slash. Because we have enabled the embedded version of Discovery in the Presto coordinator, this should be the URI of the Presto coordinator.",
+      "configName" : "discovery.uri",
+      "required" : "true",
+      "type" : "uri",
+      "default" : "http://localhost:52000"
+    },
+    {
+      "name" : "tpch_plugin_enabled",
+      "label" : "Enable TPCH Plugin",
+      "description" : "Enable TPCH Plugin",
+      "configName" : "tpch-plugin.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
+      "name" : "hive_plugin_enabled",
+      "label" : "Enable Hive Plugin",
+      "description" : "Enable Hive Plugin",
+      "configName" : "hive-plugin.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
+      "name" : "alluxio_plugin_enabled",
+      "label" : "Enable Alluxio Plugin",
+      "description" : "Enable Alluxio Plugin",
+      "configName" : "alluxio-plugin.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
+      "name" : "phoenix_plugin_enabled",
+      "label" : "Enable Phoenix Plugin",
+      "description" : "Enable Phoenix Plugin",
+      "configName" : "phoenix-plugin.enabled",
+      "required" : "true",
+      "type" : "string_enum",
+      "validValues" : [ "none", "4_6", "4_10" ],
+      "default" : "none"
+    },
+    {
+      "name" : "impala_plugin_enabled",
+      "label" : "Enable Impala Plugin",
+      "description" : "Enable Impala Plugin",
+      "configName" : "impala-plugin.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
+      "name" : "mysql_plugin_enabled",
+      "label" : "Enable mysql Plugin",
+      "description" : "Enable Mysql Plugin",
+      "configName" : "mysql-plugin.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
+      "name" : "mysql_connection_host",
+      "label" : "mysql.connection-url",
+      "description" : "mysql host",
+      "configName" : "mysql.connection.host",
+      "required" : "true",
+      "type" : "string",
+      "default" : "localhost"
+    },
+    {
+      "name" : "mysql_connection_port",
+      "label" : "mysql.connection-port",
+      "description" : "mysql prot",
+      "configName" : "mysql.connection.port",
+      "required" : "true",
+      "type" : "port",
+      "default" : "3306"
+    },
+    {
+      "name" : "mysql_connection_user",
+      "label" : "mysql.connection-user",
+      "description" : "mysql.connection-user",
+      "configName" : "connection-user",
+      "required" : "true",
+      "type" : "string",
+      "default" : "mysql-user"
+    },
+    {
+      "name" : "mysql_connection_password",
+      "label" : "mysql.connection-password",
+      "description" : "mysql.connection-password",
+      "configName" : "connection-password",
+      "required" : "true",
+      "type" : "password",
+      "default" : "password"
+    },
+    {
+      "name" : "log_level",
+      "label" : "Presto Log Level",
+      "description" : "Presto Log Level",
+      "configName" : "com.facebook.presto",
+      "required" : "true",
+      "type" : "string",
+      "default" : "INFO"
+    }
+  ],
+
+  "rolesWithExternalLinks" : ["PRESTO_COORDINATOR", "PRESTO_WORKER"],
+  "roles" : [
+    {
+      "name" : "PRESTO_COORDINATOR",
+      "label" : "Coordinator",
+      "pluralLabel" : "Coordinators",
+      "startRunner" : {
+        "program" : "scripts/control.sh",
+        "args" : [
+          "start_corrdinator",
+          "etc/coordinator.config.properties"
+        ],
+        "environmentVariables" : {
+          "TPCH_PLUGIN_ENABLED": "${tpch_plugin_enabled}",
+          "HIVE_PLUGIN_ENABLED": "${hive_plugin_enabled}",
+          "ALLUXIO_PLUGIN_ENABLED": "${alluxio_plugin_enabled}",
+          "PHOENIX_PLUGIN_ENABLED": "${phoenix_plugin_enabled}",
+          "IMPALA_PLUGIN_ENABLED": "${impala_plugin_enabled}",
+          "MYSQL_PLUGIN_ENABLED": "${mysql_plugin_enabled}"
+        }
+      },
+      "commands" : [
+        {
+          "name" : "coord_init",
+          "label" : "Initialize Coordinator node.properties.",
+          "description" : "Initialize Coordinator node.properties.",
+          "expectedExitCodes" : [0],
+          "requiredRoleState" : "stopped",
+          "commandRunner" : {
+            "program" : "scripts/control.sh",
+            "args" : ["init_node_properties"],
+            "environmentVariables" : {
+            }
+          }
+        }
+      ],
+      "externalLink" : {
+       "name" : "coordinator_web_ui",
+       "label" : "Coordinator Web UI",
+       "url" : "http://${host}:${coordinator_webui_port}"
+      },
+      "topology" : { "minInstances" : 1 },
+      "parameters" : [
+        {
+          "name" : "coordinator_webui_port",
+          "label" : "Coordinator Port",
+          "description" : "The port of the coordinator",
+          "configName" : "http-server.http.port",
+          "required" : "true",
+          "type" : "port",
+          "default" : 52000
+        },
+        {
+          "name" : "query_max-memory",
+          "label" : "Query Max Memory",
+          "description": "The maximum amount of distributed memory that a query may use.",
+          "configName" : "query.max-memory",
+          "required" : "true",
+          "type" : "memory",
+          "unit" : "bytes",
+          "default" : 53687091200
+        },
+        {
+          "name" : "query_max-memory-per-node",
+          "label" : "Query Max Memory per Node",
+          "description" : "The maximum amount of memory that a query may use on any one machine.",
+          "configName" : "query.max-memory-per-node",
+          "required" : "true",
+          "type" : "memory",
+          "unit" : "bytes",
+          "default" : 1073741824
+        },
+        {
+          "name" : "jvm_config",
+          "label" : "jvm_config",
+          "description" : "jvm_config",
+          "configName" : "jvm.config",
+          "required" : "true",
+          "type" : "string_array",
+          "separator" : "\n",
+          "default" : [
+            "-server",
+            "-Xmx16G",
+            "-XX:+UseG1GC",
+            "-XX:G1HeapRegionSize=32M",
+            "-XX:+UseGCOverheadLimit",
+            "-XX:+ExplicitGCInvokesConcurrent",
+            "-XX:+HeapDumpOnOutOfMemoryError",
+            "-XX:OnOutOfMemoryError=kill -9 %p"
+          ]
+        }
+      ],
+      "configWriter" : {
+        "generators" : [
+          {
+            "filename" : "etc/coordinator.config.properties",
+            "configFormat" : "properties",
+            "includedParams" : ["discovery_uri", "coordinator_webui_port", "query_max-memory", "query_max-memory-per-node"],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "coordinator",
+                "value" : "true"
+              },
+              {
+                "key" : "node-scheduler.include-coordinator",
+                "value" : "false"
+              },
+              {
+                "key": "discovery-server.enabled",
+                "value": "true"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/log.properties",
+            "configFormat" : "properties",
+            "includedParams" : ["log_level"]
+          },
+          {
+            "filename" : "etc/catalog/hive.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "hive-hadoop2"
+              },
+              {
+                "key" : "hive.metastore.uri",
+                "value" : "{{hive-metastore-uri}}"
+              },
+              {
+                "key" : "hive.config.resources",
+                "value" : "{{hive-conf}}/core-site.xml,{{hive-conf}}/hdfs-site.xml,{{hive-conf}}/hive-site.xml"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/mysql.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : ["mysql_connection_user", "mysql_connection_password"],
+            "excludedParams" : ["jvm_config", "mysql_connection_host", "mysql_connection_port"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "mysql"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "jdbc:mysql://${mysql_connection_host}:${mysql_connection_port}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/impala.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "impala"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "{{impala_connection_url}}"
+              },
+              {
+                "key" : "connection-user",
+                "value" : "impala"
+              },
+              {
+                "key" : "connection-password",
+                "value" : "Vf$DS%v@QfQqvqW3"
+              },
+              {
+                "key" : "connection-info",
+                "value" : "{{impala_connection_info}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/phoenix.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "phoenix-{{phoenix_version}}"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "{{phoenix_connection_url}}"
+              },
+              {
+                "key" : "connection-user",
+                "value" : "phoenix"
+              },
+              {
+                "key" : "connection-password",
+                "value" : "@#dXV4%AZeA342AR"
+              },
+              {
+                "key" : "connection-info",
+                "value" : "{{phoenix_connection_info}}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/jmx.properties",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "jmx"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/default.properties",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "raptor"
+              },
+              {
+                "key" : "metadata.db.type",
+                "value" : "h2"
+              },
+              {
+                "key" : "metadata.db.filename",
+                "value" : "./var/data/db/MetaStore"
+              },
+              {
+                "key" : "storage.data-directory",
+                "value" : "var/data"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/tpch.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "tpch"
+              },
+              {
+                "key" : "tpch.splits-per-node",
+                "value" : "4"
+              }
+            ]
+          },
+          {
+            "filename" : "jvm.dummy.config",
+            "configFormat" : "properties",
+            "includedParams" : ["jvm_config"]
+          },
+          {
+            "filename" : "etc/catalog/alluxio.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "hive-hadoop2"
+              },
+              {
+                "key" : "hive.metastore.uri",
+                "value" : "{{hive-metastore-uri}}"
+              },
+              {
+                "key" : "hive.config.resources",
+                "value" : "{{hive-conf}}/core-site.xml,{{hive-conf}}/hdfs-site.xml,{{hive-conf}}/hive-site.xml"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name" : "PRESTO_WORKER",
+      "label" : "Worker",
+      "pluralLabel" : "Workers",
+      "startRunner" : {
+        "program" : "scripts/control.sh",
+        "args" : [
+          "start_worker",
+          "etc/worker.config.properties"
+        ],
+        "environmentVariables" : {
+          "TPCH_PLUGIN_ENABLED": "${tpch_plugin_enabled}",
+          "HIVE_PLUGIN_ENABLED": "${hive_plugin_enabled}",
+          "ALLUXIO_PLUGIN_ENABLED": "${alluxio_plugin_enabled}",
+          "PHOENIX_PLUGIN_ENABLED": "${phoenix_plugin_enabled}",
+          "IMPALA_PLUGIN_ENABLED": "${impala_plugin_enabled}",
+          "MYSQL_PLUGIN_ENABLED": "${mysql_plugin_enabled}"
+        }
+      },
+      "commands" : [
+        {
+          "name" : "worker_init",
+          "label" : "Initialize Worker node.properties.",
+          "description" : "Initialize Worker node.properties.",
+          "expectedExitCodes" : [0],
+          "requiredRoleState" : "stopped",
+          "commandRunner" : {
+            "program" : "scripts/control.sh",
+            "args" : ["init_node_properties"],
+            "environmentVariables" : {
+            }
+          }
+        }
+      ],
+      "externalLink" : {
+       "name" : "worker_web_ui",
+       "label" : "Worker Web UI",
+       "url" : "http://${host}:${worker_webui_port}"
+      },
+      "topology" : { "minInstances" : 1 },
+      "parameters" : [
+        {
+          "name" : "worker_webui_port",
+          "label" : "Worker Port",
+          "description" : "The port of the worker",
+          "configName" : "http-server.http.port",
+          "required" : "true",
+          "type" : "port",
+          "default" : 52000
+        },
+        {
+          "name" : "query_max-memory",
+          "label" : "Query Max Memory",
+          "description": "The maximum amount of distributed memory that a query may use.",
+          "configName" : "query.max-memory",
+          "required" : "true",
+          "type" : "memory",
+          "unit" : "bytes",
+          "default" : 53687091200
+        },
+        {
+          "name" : "query_max-memory-per-node",
+          "label" : "Query Max Memory per Node",
+          "description" : "The maximum amount of memory that a query may use on any one machine.",
+          "configName" : "query.max-memory-per-node",
+          "required" : "true",
+          "type" : "memory",
+          "unit" : "bytes",
+          "default" : 1073741824
+        },
+        {
+          "name" : "jvm_config",
+          "label" : "jvm_config",
+          "description" : "jvm_config",
+          "configName" : "jvm.config",
+          "required" : "true",
+          "type" : "string_array",
+          "separator" : "\n",
+          "default" : [
+            "-server",
+            "-Xmx16G",
+            "-XX:+UseG1GC",
+            "-XX:G1HeapRegionSize=32M",
+            "-XX:+UseGCOverheadLimit",
+            "-XX:+ExplicitGCInvokesConcurrent",
+            "-XX:+HeapDumpOnOutOfMemoryError",
+            "-XX:OnOutOfMemoryError=kill -9 %p"
+          ]
+        }
+      ],
+      "configWriter" : {
+        "generators" : [
+          {
+            "filename" : "etc/worker.config.properties",
+            "configFormat" : "properties",
+            "includedParams" : ["discovery_uri", "worker_webui_port", "query_max-memory", "query_max-memory-per-node"],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "coordinator",
+                "value" : "false"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/log.properties",
+            "configFormat" : "properties",
+            "includedParams" : ["log_level"]
+          },
+          {
+            "filename" : "etc/catalog/hive.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "hive-hadoop2"
+              },
+              {
+                "key" : "hive.metastore.uri",
+                "value" : "{{hive-metastore-uri}}"
+              },
+              {
+                "key" : "hive.config.resources",
+                "value" : "{{hive-conf}}/core-site.xml,{{hive-conf}}/hdfs-site.xml,{{hive-conf}}/hive-site.xml"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/mysql.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : ["mysql_connection_user", "mysql_connection_password"],
+            "excludedParams" : ["jvm_config", "mysql_connection_host", "mysql_connection_port"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "mysql"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "jdbc:mysql://${mysql_connection_host}:${mysql_connection_port}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/impala.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "impala"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "{{impala_connection_url}}"
+              },
+              {
+                "key" : "connection-user",
+                "value" : "impala"
+              },
+              {
+                "key" : "connection-password",
+                "value" : "Vf$DS%v@QfQqvqW3"
+              },
+              {
+                "key" : "connection-info",
+                "value" : "{{impala_connection_info}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/phoenix.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "phoenix-{{phoenix_version}}"
+              },
+              {
+                "key" : "connection-url",
+                "value" : "{{phoenix_connection_url}}"
+              },
+              {
+                "key" : "connection-user",
+                "value" : "phoenix"
+              },
+              {
+                "key" : "connection-password",
+                "value" : "@#dXV4%AZeA342AR"
+              },
+              {
+                "key" : "connection-info",
+                "value" : "{{phoenix_connection_info}}"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/jmx.properties",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "jmx"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/default.properties",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "raptor"
+              },
+              {
+                "key" : "metadata.db.type",
+                "value" : "h2"
+              },
+              {
+                "key" : "metadata.db.filename",
+                "value" : "./var/data/db/MetaStore"
+              },
+              {
+                "key" : "storage.data-directory",
+                "value" : "./var/data"
+              }
+            ]
+          },
+          {
+            "filename" : "etc/catalog/tpch.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "tpch"
+              },
+              {
+                "key" : "tpch.splits-per-node",
+                "value" : "4"
+              }
+            ]
+          },
+          {
+            "filename" : "jvm.dummy.config",
+            "configFormat" : "properties",
+            "includedParams" : ["jvm_config"]
+          },
+          {
+            "filename" : "etc/catalog/alluxio.properties.tmp",
+            "configFormat" : "properties",
+            "includedParams" : [],
+            "excludedParams" : ["jvm_config"],
+            "additionalConfigs" : [
+              {
+                "key" : "connector.name",
+                "value" : "hive-hadoop2"
+              },
+              {
+                "key" : "hive.metastore.uri",
+                "value" : "{{hive-metastore-uri}}"
+              },
+              {
+                "key" : "hive.config.resources",
+                "value" : "{{hive-conf}}/core-site.xml,{{hive-conf}}/hdfs-site.xml,{{hive-conf}}/hive-site.xml"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

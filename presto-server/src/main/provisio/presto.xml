@@ -103,6 +103,24 @@
             <unpack />
         </artifact>
     </artifactSet>
+<!--
+    <artifactSet to="plugin/impala">
+        <artifact id="${project.groupId}:presto-impala:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+-->
+    <artifactSet to="plugin/phoenix-4_6">
+        <artifact id="${project.groupId}:presto-phoenix-4_6:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/phoenix-4_10">
+        <artifact id="${project.groupId}:presto-phoenix-4_10:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
 
     <artifactSet to="plugin/redshift">
         <artifact id="${project.groupId}:presto-redshift:zip:${project.version}">

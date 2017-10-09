@@ -1,0 +1,135 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.facebook.presto</groupId>
+    <artifactId>presto-assembly</artifactId>
+    <version>0.173-cdh5.8</version>
+  </parent>
+  
+  <groupId>com.facebook.presto.parcel</groupId>
+  <artifactId>PRESTO</artifactId>
+  <packaging>pom</packaging>
+  <name>presto-parcel</name>
+
+  <properties>
+    <presto.version>0.173-cdh5.8</presto.version>
+    <jdk.version>8u121</jdk.version>
+    <jdk.build>b13</jdk.build>
+
+    <jdk8.home>/usr/java/latest</jdk8.home>
+    <server.tar.package>presto-server-${presto.version}</server.tar.package>
+    <parcel.name>PRESTO-${presto.version}</parcel.name>
+
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.facebook.presto</groupId>
+      <artifactId>presto-cli</artifactId>
+      <version>${presto.version}</version>
+      <type>jar</type>
+      <classifier>executable</classifier>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.facebook.presto</groupId>
+      <artifactId>presto-server</artifactId>
+      <version>${presto.version}</version>
+      <type>tar.gz</type>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>2.7</version>
+        <executions>
+          <execution>
+            <id>copy</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>resources</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Untar presto-server tgz to target build folder -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>unpack</id>
+            <goals>
+              <goal>unpack</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}</outputDirectory>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>com.facebook.presto</groupId>
+                  <artifactId>presto-server</artifactId>
+                  <version>${presto.version}</version>
+                  <type>tar.gz</type>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy</id>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>com.facebook.presto</groupId>
+                  <artifactId>presto-cli</artifactId>
+                  <version>${presto.version}</version>
+                  <type>jar</type>
+                  <classifier>executable</classifier>
+                  <outputDirectory>${project.build.directory}/${server.tar.package}/bin</outputDirectory>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Build cloudera manager parcel -->
+      <plugin>
+        <artifactId>exec-maven-plugin</artifactId>
+        <groupId>org.codehaus.mojo</groupId>
+        <executions>
+          <execution>
+            <id>assemble</id>
+            <phase>package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>/bin/sh</executable>
+              <arguments>
+                <argument>${project.build.outputDirectory}/assemble.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
