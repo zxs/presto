@@ -245,15 +245,21 @@ final class PrestoDriverUri
         }
 
         if (parts.get(0).isEmpty()) {
-            throw new SQLException("Catalog name is empty: " + uri);
+            catalog = "default";
+            //throw new SQLException("Catalog name is empty: " + uri);
         }
-        catalog = parts.get(0);
+        else {
+            catalog = parts.get(0);
+        }
 
         if (parts.size() > 1) {
             if (parts.get(1).isEmpty()) {
-                throw new SQLException("Schema name is empty: " + uri);
+                schema = "default";
+                //throw new SQLException("Schema name is empty: " + uri);
             }
-            schema = parts.get(1);
+            else {
+                schema = parts.get(1);
+            }
         }
     }
 
