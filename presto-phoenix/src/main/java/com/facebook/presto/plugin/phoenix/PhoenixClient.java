@@ -67,14 +67,14 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import static java.lang.Math.min;
 
 public class PhoenixClient
-    extends BaseJdbcClient
+        extends BaseJdbcClient
 {
     private static final Logger log = Logger.get(PhoenixClient.class);
     private static final Integer INF = -1;
     private LoadingCache<Object, Object> phoenixMetadataCache;
     @Inject
     public PhoenixClient(JdbcConnectorId connectorId, BaseJdbcConfig config)
-        throws SQLException
+            throws SQLException
     {
         super(connectorId, config, "\"", new PhoenixDriver());
         if (config.getConnectionInfo() != null) {
@@ -160,7 +160,7 @@ public class PhoenixClient
     }
 
     protected ResultSet getTables(Connection connection, String schemaName, String tableName)
-        throws SQLException
+            throws SQLException
     {
         return connection.getMetaData().getTables(connection.getCatalog(), schemaName, tableName, new String[]{"TABLE", "VIEW"});
     }
@@ -212,11 +212,11 @@ public class PhoenixClient
                 List<JdbcTableHandle> tableHandles = new ArrayList<>();
                 while (resultSet.next()) {
                     tableHandles.add(new JdbcTableHandle(
-                        connectorId,
-                        schemaTableName,
-                        resultSet.getString("TABLE_CAT"),
-                        resultSet.getString("TABLE_SCHEM"),
-                        resultSet.getString("TABLE_NAME")));
+                            connectorId,
+                            schemaTableName,
+                            resultSet.getString("TABLE_CAT"),
+                            resultSet.getString("TABLE_SCHEM"),
+                            resultSet.getString("TABLE_NAME")));
                 }
                 if (tableHandles.isEmpty()) {
                     return null;

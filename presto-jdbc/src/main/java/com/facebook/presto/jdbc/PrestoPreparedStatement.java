@@ -82,7 +82,7 @@ public class PrestoPreparedStatement
     public void setBoolean(int parameterIndex, boolean x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
@@ -96,35 +96,35 @@ public class PrestoPreparedStatement
     public void setShort(int parameterIndex, short x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setInt(int parameterIndex, int x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setLong(int parameterIndex, long x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setFloat(int parameterIndex, float x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
     public void setDouble(int parameterIndex, double x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, "" + x);
+        this.parameters.put(parameterIndex, "" + x);
     }
 
     @Override
@@ -138,8 +138,8 @@ public class PrestoPreparedStatement
     public void setString(int parameterIndex, String x)
             throws SQLException
     {
-      x = x.replace("'", "\\'");
-      this.parameters.put(parameterIndex, "'" + x + "'");
+        x = x.replace("'", "\\'");
+        this.parameters.put(parameterIndex, "'" + x + "'");
     }
 
     @Override
@@ -153,21 +153,21 @@ public class PrestoPreparedStatement
     public void setDate(int parameterIndex, Date x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, x.toString());
+        this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
     public void setTime(int parameterIndex, Time x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, x.toString());
+        this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
     public void setTimestamp(int parameterIndex, Timestamp x)
             throws SQLException
     {
-      this.parameters.put(parameterIndex, x.toString());
+        this.parameters.put(parameterIndex, x.toString());
     }
 
     @Override
@@ -195,7 +195,7 @@ public class PrestoPreparedStatement
     public void clearParameters()
             throws SQLException
     {
-      this.parameters.clear();
+        this.parameters.clear();
     }
 
     @Override

@@ -67,6 +67,7 @@
     </properties>
 
     <modules>
+        <module>presto-assembly</module>
         <module>presto-atop</module>
         <module>presto-spi</module>
         <module>presto-array</module>
@@ -93,6 +94,9 @@
         <module>presto-postgresql</module>
         <module>presto-redshift</module>
         <module>presto-sqlserver</module>
+        <module>presto-phoenix</module>
+        <module>presto-phoenix-4_6</module>
+        <module>presto-phoenix-4_10</module>
         <module>presto-mongodb</module>
         <module>presto-bytecode</module>
         <module>presto-client</module>
@@ -237,6 +241,12 @@
             <dependency>
                 <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-mysql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-phoenix</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

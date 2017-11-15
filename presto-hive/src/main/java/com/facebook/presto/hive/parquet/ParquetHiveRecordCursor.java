@@ -170,8 +170,7 @@ public class ParquetHiveRecordCursor
                 columns,
                 useParquetColumnNames,
                 predicatePushdownEnabled,
-                effectivePredicate
-        ));
+                effectivePredicate));
     }
 
     @Override
@@ -192,7 +191,7 @@ public class ParquetHiveRecordCursor
     private void updateCompletedBytes()
     {
         if (!recordReader.isPresent()) {
-           return;
+            return;
         }
         try {
             long newCompletedBytes = (long) (totalBytes * recordReader.get().getProgress());
