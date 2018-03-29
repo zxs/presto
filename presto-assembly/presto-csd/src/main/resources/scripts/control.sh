@@ -18,6 +18,10 @@ PRESTO_CONF_FILE=$CONF_DIR/$2
 PRESTO_CONF_PROP=$CONF_DIR/config.properties
 
 ENABLED_PLUGINS=(raptor jmx)
+if [ ${EVENT_LISTENER_ENABLED} == true ]; then
+  ln -s $CONF_DIR/event-listener.properties $CONF_DIR/etc/event-listener.properties
+  ENABLED_PLUGINS+=(eventlistener-flume)
+fi
 
 [ ${HIVE_PLUGIN_ENABLED} == true ] && ENABLED_PLUGINS+=(hive-hadoop2)
 [ ${ALLUXIO_PLUGIN_ENABLED} == true ] && ENABLED_PLUGINS+=(hive-hadoop2)

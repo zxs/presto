@@ -1,0 +1,842 @@
+{
+  "stageId": "20171129_021219_00003_rxtp8.0",
+  "state": "FINISHED",
+  "self": "http://10.8.150.99:8080/v1/stage/20171129_021219_00003_rxtp8.0",
+  "plan": {
+    "id": "0",
+    "root": {
+      "@type": "output",
+      "id": "6",
+      "source": {
+        "@type": "remoteSource",
+        "id": "128",
+        "sourceFragmentIds": [
+          "1"
+        ],
+        "outputs": [
+          "name"
+        ]
+      },
+      "columns": [
+        "name"
+      ],
+      "outputs": [
+        "name"
+      ]
+    },
+    "symbols": {
+      "name": "varchar(25)"
+    },
+    "partitioning": {
+      "connectorHandle": {
+        "@type": "$remote",
+        "partitioning": "SINGLE",
+        "function": "SINGLE"
+      }
+    },
+    "partitionedSources": [],
+    "partitioningScheme": {
+      "partitioning": {
+        "handle": {
+          "connectorHandle": {
+            "@type": "$remote",
+            "partitioning": "SINGLE",
+            "function": "SINGLE"
+          }
+        },
+        "arguments": []
+      },
+      "outputLayout": [
+        "name"
+      ],
+      "replicateNullsAndAny": false,
+      "bucketToPartition": [
+        0
+      ]
+    }
+  },
+  "types": [
+    "varchar(25)"
+  ],
+  "stageStats": {
+    "schedulingComplete": "2017-11-29T02:12:19.662Z",
+    "getSplitDistribution": {
+      "maxError": "NaN",
+      "count": 0,
+      "total": 0,
+      "p01": -9223372036854775808,
+      "p05": -9223372036854775808,
+      "p10": -9223372036854775808,
+      "p25": -9223372036854775808,
+      "p50": -9223372036854775808,
+      "p75": -9223372036854775808,
+      "p90": -9223372036854775808,
+      "p95": -9223372036854775808,
+      "p99": -9223372036854775808,
+      "min": 9223372036854775807,
+      "max": -9223372036854775808
+    },
+    "scheduleTaskDistribution": {
+      "maxError": "NaN",
+      "count": 0,
+      "total": 0,
+      "p01": -9223372036854775808,
+      "p05": -9223372036854775808,
+      "p10": -9223372036854775808,
+      "p25": -9223372036854775808,
+      "p50": -9223372036854775808,
+      "p75": -9223372036854775808,
+      "p90": -9223372036854775808,
+      "p95": -9223372036854775808,
+      "p99": -9223372036854775808,
+      "min": 9223372036854775807,
+      "max": -9223372036854775808
+    },
+    "addSplitDistribution": {
+      "maxError": "NaN",
+      "count": 0,
+      "total": 0,
+      "p01": -9223372036854775808,
+      "p05": -9223372036854775808,
+      "p10": -9223372036854775808,
+      "p25": -9223372036854775808,
+      "p50": -9223372036854775808,
+      "p75": -9223372036854775808,
+      "p90": -9223372036854775808,
+      "p95": -9223372036854775808,
+      "p99": -9223372036854775808,
+      "min": 9223372036854775807,
+      "max": -9223372036854775808
+    },
+    "totalTasks": 1,
+    "runningTasks": 0,
+    "completedTasks": 1,
+    "totalDrivers": 16,
+    "queuedDrivers": 0,
+    "runningDrivers": 0,
+    "blockedDrivers": 0,
+    "completedDrivers": 16,
+    "cumulativeMemory": 0,
+    "totalMemoryReservation": "0B",
+    "peakMemoryReservation": "0B",
+    "totalScheduledTime": "189.49ms",
+    "totalCpuTime": "6.25ms",
+    "totalUserTime": "10.00ms",
+    "totalBlockedTime": "10.74s",
+    "fullyBlocked": false,
+    "blockedReasons": [],
+    "rawInputDataSize": "53B",
+    "rawInputPositions": 1,
+    "processedInputDataSize": "23B",
+    "processedInputPositions": 1,
+    "bufferedDataSize": "0B",
+    "outputDataSize": "23B",
+    "outputPositions": 1,
+    "operatorSummaries": [
+      {
+        "pipelineId": 0,
+        "operatorId": 0,
+        "planNodeId": "128",
+        "operatorType": "ExchangeOperator",
+        "totalDrivers": 16,
+        "addInputCalls": 0,
+        "addInputWall": "0.00ns",
+        "addInputCpu": "0.00ns",
+        "addInputUser": "0.00ns",
+        "inputDataSize": "53B",
+        "inputPositions": 1,
+        "sumSquaredInputPositions": 1,
+        "getOutputCalls": 1,
+        "getOutputWall": "35.94ms",
+        "getOutputCpu": "0.00ns",
+        "getOutputUser": "0.00ns",
+        "outputDataSize": "23B",
+        "outputPositions": 1,
+        "blockedWall": "10.43s",
+        "finishCalls": 0,
+        "finishWall": "0.00ns",
+        "finishCpu": "0.00ns",
+        "finishUser": "0.00ns",
+        "memoryReservation": "0B",
+        "revocableMemoryReservation": "0B",
+        "systemMemoryReservation": "0B"
+      },
+      {
+        "pipelineId": 0,
+        "operatorId": 1,
+        "planNodeId": "6",
+        "operatorType": "TaskOutputOperator",
+        "totalDrivers": 16,
+        "addInputCalls": 1,
+        "addInputWall": "737.81us",
+        "addInputCpu": "0.00ns",
+        "addInputUser": "0.00ns",
+        "inputDataSize": "23B",
+        "inputPositions": 1,
+        "sumSquaredInputPositions": 1,
+        "getOutputCalls": 0,
+        "getOutputWall": "0.00ns",
+        "getOutputCpu": "0.00ns",
+        "getOutputUser": "0.00ns",
+        "outputDataSize": "23B",
+        "outputPositions": 1,
+        "blockedWall": "0.00ns",
+        "finishCalls": 16,
+        "finishWall": "30.67us",
+        "finishCpu": "0.00ns",
+        "finishUser": "0.00ns",
+        "memoryReservation": "0B",
+        "revocableMemoryReservation": "0B",
+        "systemMemoryReservation": "0B"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "taskStatus": {
+        "taskId": "20171129_021219_00003_rxtp8.0.0",
+        "taskInstanceId": "c5fdcea9-3deb-4a17-8897-c1ff8cdacac6",
+        "version": 17,
+        "state": "FINISHED",
+        "self": "http://10.8.150.99:8080/v1/task/20171129_021219_00003_rxtp8.0.0",
+        "nodeId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "failures": [],
+        "queuedPartitionedDrivers": 0,
+        "runningPartitionedDrivers": 0,
+        "memoryReservation": "0B"
+      },
+      "lastHeartbeat": "2017-11-29T02:12:20.467Z",
+      "outputBuffers": {
+        "type": "PARTITIONED",
+        "state": "FINISHED",
+        "canAddBuffers": false,
+        "canAddPages": false,
+        "totalBufferedBytes": 0,
+        "totalBufferedPages": 0,
+        "totalRowsSent": 1,
+        "totalPagesSent": 1,
+        "buffers": []
+      },
+      "noMoreSplits": [
+        "128"
+      ],
+      "stats": {
+        "createTime": "2017-11-29T02:12:19.670Z",
+        "firstStartTime": "2017-11-29T02:12:19.687Z",
+        "lastStartTime": "2017-11-29T02:12:19.713Z",
+        "lastEndTime": "2017-11-29T02:12:20.479Z",
+        "endTime": "2017-11-29T02:12:20.484Z",
+        "elapsedTime": "813.95ms",
+        "queuedTime": "17.59ms",
+        "totalDrivers": 16,
+        "queuedDrivers": 0,
+        "queuedPartitionedDrivers": 0,
+        "runningDrivers": 0,
+        "runningPartitionedDrivers": 0,
+        "blockedDrivers": 0,
+        "completedDrivers": 16,
+        "cumulativeMemory": 0,
+        "memoryReservation": "0B",
+        "revocableMemoryReservation": "0B",
+        "systemMemoryReservation": "0B",
+        "totalScheduledTime": "189.49ms",
+        "totalCpuTime": "6.25ms",
+        "totalUserTime": "10.00ms",
+        "totalBlockedTime": "10.74s",
+        "fullyBlocked": false,
+        "blockedReasons": [],
+        "rawInputDataSize": "53B",
+        "rawInputPositions": 1,
+        "processedInputDataSize": "23B",
+        "processedInputPositions": 1,
+        "outputDataSize": "23B",
+        "outputPositions": 1,
+        "pipelines": [
+          {
+            "pipelineId": 0,
+            "firstStartTime": "2017-11-29T02:12:19.687Z",
+            "lastStartTime": "2017-11-29T02:12:19.713Z",
+            "lastEndTime": "2017-11-29T02:12:20.479Z",
+            "inputPipeline": true,
+            "outputPipeline": true,
+            "totalDrivers": 16,
+            "queuedDrivers": 0,
+            "queuedPartitionedDrivers": 0,
+            "runningDrivers": 0,
+            "runningPartitionedDrivers": 0,
+            "blockedDrivers": 0,
+            "completedDrivers": 16,
+            "memoryReservation": "0B",
+            "revocableMemoryReservation": "0B",
+            "systemMemoryReservation": "0B",
+            "queuedTime": {
+              "maxError": 0,
+              "count": 16,
+              "total": 634220152,
+              "p01": 17376556,
+              "p05": 17376556,
+              "p10": 39083054,
+              "p25": 39989184,
+              "p50": 40422238,
+              "p75": 42655852,
+              "p90": 43073279,
+              "p95": 43253539,
+              "p99": 43253539,
+              "min": 17376556,
+              "max": 43253539
+            },
+            "elapsedTime": {
+              "maxError": 0,
+              "count": 16,
+              "total": 12630827649,
+              "p01": 772856508,
+              "p05": 772856508,
+              "p10": 773048231,
+              "p25": 773890228,
+              "p50": 794105321,
+              "p75": 803687323,
+              "p90": 805610356,
+              "p95": 808770312,
+              "p99": 808770312,
+              "min": 772856508,
+              "max": 808770312
+            },
+            "totalScheduledTime": "189.49ms",
+            "totalCpuTime": "6.25ms",
+            "totalUserTime": "10.00ms",
+            "totalBlockedTime": "10.74s",
+            "fullyBlocked": false,
+            "blockedReasons": [],
+            "rawInputDataSize": "53B",
+            "rawInputPositions": 1,
+            "processedInputDataSize": "23B",
+            "processedInputPositions": 1,
+            "outputDataSize": "23B",
+            "outputPositions": 1,
+            "operatorSummaries": [
+              {
+                "pipelineId": 0,
+                "operatorId": 0,
+                "planNodeId": "128",
+                "operatorType": "ExchangeOperator",
+                "totalDrivers": 16,
+                "addInputCalls": 0,
+                "addInputWall": "0.00ns",
+                "addInputCpu": "0.00ns",
+                "addInputUser": "0.00ns",
+                "inputDataSize": "53B",
+                "inputPositions": 1,
+                "sumSquaredInputPositions": 1,
+                "getOutputCalls": 1,
+                "getOutputWall": "35.94ms",
+                "getOutputCpu": "0.00ns",
+                "getOutputUser": "0.00ns",
+                "outputDataSize": "23B",
+                "outputPositions": 1,
+                "blockedWall": "10.43s",
+                "finishCalls": 0,
+                "finishWall": "0.00ns",
+                "finishCpu": "0.00ns",
+                "finishUser": "0.00ns",
+                "memoryReservation": "0B",
+                "revocableMemoryReservation": "0B",
+                "systemMemoryReservation": "0B"
+              },
+              {
+                "pipelineId": 0,
+                "operatorId": 1,
+                "planNodeId": "6",
+                "operatorType": "TaskOutputOperator",
+                "totalDrivers": 16,
+                "addInputCalls": 1,
+                "addInputWall": "737.81us",
+                "addInputCpu": "0.00ns",
+                "addInputUser": "0.00ns",
+                "inputDataSize": "23B",
+                "inputPositions": 1,
+                "sumSquaredInputPositions": 1,
+                "getOutputCalls": 0,
+                "getOutputWall": "0.00ns",
+                "getOutputCpu": "0.00ns",
+                "getOutputUser": "0.00ns",
+                "outputDataSize": "23B",
+                "outputPositions": 1,
+                "blockedWall": "0.00ns",
+                "finishCalls": 16,
+                "finishWall": "30.67us",
+                "finishCpu": "0.00ns",
+                "finishUser": "0.00ns",
+                "memoryReservation": "0B",
+                "revocableMemoryReservation": "0B",
+                "systemMemoryReservation": "0B"
+              }
+            ],
+            "drivers": []
+          }
+        ]
+      },
+      "needsPlan": false,
+      "complete": true
+    }
+  ],
+  "subStages": [
+    {
+      "stageId": "20171129_021219_00003_rxtp8.1",
+      "state": "FINISHED",
+      "self": "http://10.8.150.99:8080/v1/stage/20171129_021219_00003_rxtp8.1",
+      "plan": {
+        "id": "1",
+        "root": {
+          "@type": "project",
+          "id": "127",
+          "source": {
+            "@type": "filter",
+            "id": "106",
+            "source": {
+              "@type": "tablescan",
+              "id": "0",
+              "table": {
+                "connectorId": "tpch",
+                "connectorHandle": {
+                  "@type": "tpch",
+                  "connectorId": "tpch",
+                  "tableName": "customer",
+                  "scaleFactor": 1
+                }
+              },
+              "outputSymbols": [
+                "custkey",
+                "name"
+              ],
+              "assignments": {
+                "custkey": {
+                  "@type": "tpch",
+                  "columnName": "custkey",
+                  "type": "bigint"
+                },
+                "name": {
+                  "@type": "tpch",
+                  "columnName": "name",
+                  "type": "varchar(25)"
+                }
+              },
+              "layout": {
+                "connectorId": "tpch",
+                "transactionHandle": [
+                  "tpch",
+                  "INSTANCE"
+                ],
+                "connectorHandle": {
+                  "@type": "tpch",
+                  "table": {
+                    "@type": "tpch",
+                    "connectorId": "tpch",
+                    "tableName": "customer",
+                    "scaleFactor": 1
+                  }
+                }
+              },
+              "currentConstraint": {
+                "columnDomains": [
+                  {
+                    "column": {
+                      "@type": "tpch",
+                      "columnName": "custkey",
+                      "type": "bigint"
+                    },
+                    "domain": {
+                      "values": {
+                        "@type": "sortable",
+                        "type": "bigint",
+                        "ranges": [
+                          {
+                            "low": {
+                              "type": "bigint",
+                              "valueBlock": "CgAAAExPTkdfQVJSQVkBAAAAAPkkAQAAAAAA",
+                              "bound": "EXACTLY"
+                            },
+                            "high": {
+                              "type": "bigint",
+                              "valueBlock": "CgAAAExPTkdfQVJSQVkBAAAAAPkkAQAAAAAA",
+                              "bound": "EXACTLY"
+                            }
+                          }
+                        ]
+                      },
+                      "nullAllowed": false
+                    }
+                  }
+                ]
+              },
+              "originalConstraint": "(\"custkey\" = BIGINT '75001')"
+            },
+            "predicate": "(\"custkey\" = BIGINT '75001')"
+          },
+          "assignments": {
+            "assignments": {
+              "name": "\"name\""
+            }
+          }
+        },
+        "symbols": {
+          "custkey": "bigint",
+          "name": "varchar(25)"
+        },
+        "partitioning": {
+          "connectorHandle": {
+            "@type": "$remote",
+            "partitioning": "SOURCE",
+            "function": "UNKNOWN"
+          }
+        },
+        "partitionedSources": [
+          "0"
+        ],
+        "partitioningScheme": {
+          "partitioning": {
+            "handle": {
+              "connectorHandle": {
+                "@type": "$remote",
+                "partitioning": "SINGLE",
+                "function": "SINGLE"
+              }
+            },
+            "arguments": []
+          },
+          "outputLayout": [
+            "name"
+          ],
+          "replicateNullsAndAny": false,
+          "bucketToPartition": [
+            0
+          ]
+        }
+      },
+      "types": [
+        "varchar(25)"
+      ],
+      "stageStats": {
+        "schedulingComplete": "2017-11-29T02:12:19.651Z",
+        "getSplitDistribution": {
+          "maxError": 0,
+          "count": 1,
+          "total": 3916,
+          "p01": 3916,
+          "p05": 3916,
+          "p10": 3916,
+          "p25": 3916,
+          "p50": 3916,
+          "p75": 3916,
+          "p90": 3916,
+          "p95": 3916,
+          "p99": 3916,
+          "min": 3916,
+          "max": 3916
+        },
+        "scheduleTaskDistribution": {
+          "maxError": "NaN",
+          "count": 0,
+          "total": 0,
+          "p01": -9223372036854775808,
+          "p05": -9223372036854775808,
+          "p10": -9223372036854775808,
+          "p25": -9223372036854775808,
+          "p50": -9223372036854775808,
+          "p75": -9223372036854775808,
+          "p90": -9223372036854775808,
+          "p95": -9223372036854775808,
+          "p99": -9223372036854775808,
+          "min": 9223372036854775807,
+          "max": -9223372036854775808
+        },
+        "addSplitDistribution": {
+          "maxError": "NaN",
+          "count": 0,
+          "total": 0,
+          "p01": -9223372036854775808,
+          "p05": -9223372036854775808,
+          "p10": -9223372036854775808,
+          "p25": -9223372036854775808,
+          "p50": -9223372036854775808,
+          "p75": -9223372036854775808,
+          "p90": -9223372036854775808,
+          "p95": -9223372036854775808,
+          "p99": -9223372036854775808,
+          "min": 9223372036854775807,
+          "max": -9223372036854775808
+        },
+        "totalTasks": 1,
+        "runningTasks": 0,
+        "completedTasks": 1,
+        "totalDrivers": 4,
+        "queuedDrivers": 0,
+        "runningDrivers": 0,
+        "blockedDrivers": 0,
+        "completedDrivers": 4,
+        "cumulativeMemory": 0,
+        "totalMemoryReservation": "0B",
+        "peakMemoryReservation": "0B",
+        "totalScheduledTime": "2.55s",
+        "totalCpuTime": "1.27s",
+        "totalUserTime": "1.27s",
+        "totalBlockedTime": "0.00ns",
+        "fullyBlocked": false,
+        "blockedReasons": [],
+        "rawInputDataSize": "0B",
+        "rawInputPositions": 150000,
+        "processedInputDataSize": "23B",
+        "processedInputPositions": 1,
+        "bufferedDataSize": "0B",
+        "outputDataSize": "23B",
+        "outputPositions": 1,
+        "operatorSummaries": [
+          {
+            "pipelineId": 0,
+            "operatorId": 0,
+            "planNodeId": "127",
+            "operatorType": "ScanFilterAndProjectOperator",
+            "totalDrivers": 4,
+            "addInputCalls": 0,
+            "addInputWall": "0.00ns",
+            "addInputCpu": "0.00ns",
+            "addInputUser": "0.00ns",
+            "inputDataSize": "0B",
+            "inputPositions": 150000,
+            "sumSquaredInputPositions": 5625000000,
+            "getOutputCalls": 4,
+            "getOutputWall": "2.54s",
+            "getOutputCpu": "0.00ns",
+            "getOutputUser": "0.00ns",
+            "outputDataSize": "23B",
+            "outputPositions": 1,
+            "blockedWall": "0.00ns",
+            "finishCalls": 0,
+            "finishWall": "0.00ns",
+            "finishCpu": "0.00ns",
+            "finishUser": "0.00ns",
+            "memoryReservation": "0B",
+            "revocableMemoryReservation": "0B",
+            "systemMemoryReservation": "0B"
+          },
+          {
+            "pipelineId": 0,
+            "operatorId": 1,
+            "planNodeId": "127",
+            "operatorType": "TaskOutputOperator",
+            "totalDrivers": 4,
+            "addInputCalls": 1,
+            "addInputWall": "632.61us",
+            "addInputCpu": "0.00ns",
+            "addInputUser": "0.00ns",
+            "inputDataSize": "23B",
+            "inputPositions": 1,
+            "sumSquaredInputPositions": 1,
+            "getOutputCalls": 0,
+            "getOutputWall": "0.00ns",
+            "getOutputCpu": "0.00ns",
+            "getOutputUser": "0.00ns",
+            "outputDataSize": "23B",
+            "outputPositions": 1,
+            "blockedWall": "0.00ns",
+            "finishCalls": 4,
+            "finishWall": "905.64us",
+            "finishCpu": "0.00ns",
+            "finishUser": "0.00ns",
+            "memoryReservation": "0B",
+            "revocableMemoryReservation": "0B",
+            "systemMemoryReservation": "0B"
+          }
+        ]
+      },
+      "tasks": [
+        {
+          "taskStatus": {
+            "taskId": "20171129_021219_00003_rxtp8.1.0",
+            "taskInstanceId": "566445d2-1aee-4098-bb73-fe0caf3650d2",
+            "version": 18,
+            "state": "FINISHED",
+            "self": "http://10.8.150.99:8080/v1/task/20171129_021219_00003_rxtp8.1.0",
+            "nodeId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            "failures": [],
+            "queuedPartitionedDrivers": 0,
+            "runningPartitionedDrivers": 0,
+            "memoryReservation": "0B"
+          },
+          "lastHeartbeat": "2017-11-29T02:12:20.338Z",
+          "outputBuffers": {
+            "type": "PARTITIONED",
+            "state": "FINISHED",
+            "canAddBuffers": false,
+            "canAddPages": false,
+            "totalBufferedBytes": 0,
+            "totalBufferedPages": 0,
+            "totalRowsSent": 1,
+            "totalPagesSent": 1,
+            "buffers": []
+          },
+          "noMoreSplits": [
+            "0"
+          ],
+          "stats": {
+            "createTime": "2017-11-29T02:12:19.655Z",
+            "firstStartTime": "2017-11-29T02:12:19.729Z",
+            "lastStartTime": "2017-11-29T02:12:19.746Z",
+            "lastEndTime": "2017-11-29T02:12:20.432Z",
+            "endTime": "2017-11-29T02:12:20.437Z",
+            "elapsedTime": "728.81ms",
+            "queuedTime": "20.60ms",
+            "totalDrivers": 4,
+            "queuedDrivers": 0,
+            "queuedPartitionedDrivers": 0,
+            "runningDrivers": 0,
+            "runningPartitionedDrivers": 0,
+            "blockedDrivers": 0,
+            "completedDrivers": 4,
+            "cumulativeMemory": 0,
+            "memoryReservation": "0B",
+            "revocableMemoryReservation": "0B",
+            "systemMemoryReservation": "0B",
+            "totalScheduledTime": "2.55s",
+            "totalCpuTime": "1.27s",
+            "totalUserTime": "1.27s",
+            "totalBlockedTime": "0.00ns",
+            "fullyBlocked": false,
+            "blockedReasons": [],
+            "rawInputDataSize": "0B",
+            "rawInputPositions": 150000,
+            "processedInputDataSize": "23B",
+            "processedInputPositions": 1,
+            "outputDataSize": "23B",
+            "outputPositions": 1,
+            "pipelines": [
+              {
+                "pipelineId": 0,
+                "firstStartTime": "2017-11-29T02:12:19.729Z",
+                "lastStartTime": "2017-11-29T02:12:19.746Z",
+                "lastEndTime": "2017-11-29T02:12:20.432Z",
+                "inputPipeline": true,
+                "outputPipeline": true,
+                "totalDrivers": 4,
+                "queuedDrivers": 0,
+                "queuedPartitionedDrivers": 0,
+                "runningDrivers": 0,
+                "runningPartitionedDrivers": 0,
+                "blockedDrivers": 0,
+                "completedDrivers": 4,
+                "memoryReservation": "0B",
+                "revocableMemoryReservation": "0B",
+                "systemMemoryReservation": "0B",
+                "queuedTime": {
+                  "maxError": 0,
+                  "count": 4,
+                  "total": 40017424,
+                  "p01": 343616,
+                  "p05": 343616,
+                  "p10": 343616,
+                  "p25": 9210964,
+                  "p50": 12881244,
+                  "p75": 17581600,
+                  "p90": 17581600,
+                  "p95": 17581600,
+                  "p99": 17581600,
+                  "min": 343616,
+                  "max": 17581600
+                },
+                "elapsedTime": {
+                  "maxError": 0,
+                  "count": 4,
+                  "total": 2592546745,
+                  "p01": 586577489,
+                  "p05": 586577489,
+                  "p10": 586577489,
+                  "p25": 630498619,
+                  "p50": 671718524,
+                  "p75": 703752113,
+                  "p90": 703752113,
+                  "p95": 703752113,
+                  "p99": 703752113,
+                  "min": 586577489,
+                  "max": 703752113
+                },
+                "totalScheduledTime": "2.55s",
+                "totalCpuTime": "1.27s",
+                "totalUserTime": "1.27s",
+                "totalBlockedTime": "0.00ns",
+                "fullyBlocked": false,
+                "blockedReasons": [],
+                "rawInputDataSize": "0B",
+                "rawInputPositions": 150000,
+                "processedInputDataSize": "23B",
+                "processedInputPositions": 1,
+                "outputDataSize": "23B",
+                "outputPositions": 1,
+                "operatorSummaries": [
+                  {
+                    "pipelineId": 0,
+                    "operatorId": 0,
+                    "planNodeId": "127",
+                    "operatorType": "ScanFilterAndProjectOperator",
+                    "totalDrivers": 4,
+                    "addInputCalls": 0,
+                    "addInputWall": "0.00ns",
+                    "addInputCpu": "0.00ns",
+                    "addInputUser": "0.00ns",
+                    "inputDataSize": "0B",
+                    "inputPositions": 150000,
+                    "sumSquaredInputPositions": 5625000000,
+                    "getOutputCalls": 4,
+                    "getOutputWall": "2.54s",
+                    "getOutputCpu": "0.00ns",
+                    "getOutputUser": "0.00ns",
+                    "outputDataSize": "23B",
+                    "outputPositions": 1,
+                    "blockedWall": "0.00ns",
+                    "finishCalls": 0,
+                    "finishWall": "0.00ns",
+                    "finishCpu": "0.00ns",
+                    "finishUser": "0.00ns",
+                    "memoryReservation": "0B",
+                    "revocableMemoryReservation": "0B",
+                    "systemMemoryReservation": "0B"
+                  },
+                  {
+                    "pipelineId": 0,
+                    "operatorId": 1,
+                    "planNodeId": "127",
+                    "operatorType": "TaskOutputOperator",
+                    "totalDrivers": 4,
+                    "addInputCalls": 1,
+                    "addInputWall": "632.61us",
+                    "addInputCpu": "0.00ns",
+                    "addInputUser": "0.00ns",
+                    "inputDataSize": "23B",
+                    "inputPositions": 1,
+                    "sumSquaredInputPositions": 1,
+                    "getOutputCalls": 0,
+                    "getOutputWall": "0.00ns",
+                    "getOutputCpu": "0.00ns",
+                    "getOutputUser": "0.00ns",
+                    "outputDataSize": "23B",
+                    "outputPositions": 1,
+                    "blockedWall": "0.00ns",
+                    "finishCalls": 4,
+                    "finishWall": "905.64us",
+                    "finishCpu": "0.00ns",
+                    "finishUser": "0.00ns",
+                    "memoryReservation": "0B",
+                    "revocableMemoryReservation": "0B",
+                    "systemMemoryReservation": "0B"
+                  }
+                ],
+                "drivers": []
+              }
+            ]
+          },
+          "needsPlan": false,
+          "complete": true
+        }
+      ],
+      "subStages": []
+    }
+  ]
+}

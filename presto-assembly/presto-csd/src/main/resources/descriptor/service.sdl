@@ -65,6 +65,15 @@
       "default" : "http://localhost:52000"
     },
     {
+      "name" : "event_listener_enabled",
+      "label" : "Enable Custom Event Listener",
+      "description" : "Enable Custom Event Listener",
+      "configName" : "event-listener.enabled",
+      "required" : "true",
+      "type" : "boolean",
+      "default" : "false"
+    },
+    {
       "name" : "tpch_plugin_enabled",
       "label" : "Enable TPCH Plugin",
       "description" : "Enable TPCH Plugin",
@@ -179,6 +188,7 @@
           "etc/coordinator.config.properties"
         ],
         "environmentVariables" : {
+          "EVENT_LISTENER_ENABLED": "${event_listener_enabled}",
           "TPCH_PLUGIN_ENABLED": "${tpch_plugin_enabled}",
           "HIVE_PLUGIN_ENABLED": "${hive_plugin_enabled}",
           "ALLUXIO_PLUGIN_ENABLED": "${alluxio_plugin_enabled}",
@@ -259,6 +269,12 @@
         }
       ],
       "configWriter" : {
+        "auxConfigGenerators" : [
+          {
+            "filename" : "event-listener.properties",
+            "sourceFilename" : "aux/event-listener.properties"
+          }
+        ],
         "generators" : [
           {
             "filename" : "etc/coordinator.config.properties",
@@ -266,6 +282,10 @@
             "includedParams" : ["discovery_uri", "coordinator_webui_port", "query_max-memory", "query_max-memory-per-node"],
             "excludedParams" : ["jvm_config"],
             "additionalConfigs" : [
+              {
+                "key" : "presto.version",
+                "value" : "${presto.version}"
+              },
               {
                 "key" : "coordinator",
                 "value" : "true"
@@ -468,6 +488,7 @@
           "etc/worker.config.properties"
         ],
         "environmentVariables" : {
+          "EVENT_LISTENER_ENABLED": "${event_listener_enabled}",
           "TPCH_PLUGIN_ENABLED": "${tpch_plugin_enabled}",
           "HIVE_PLUGIN_ENABLED": "${hive_plugin_enabled}",
           "ALLUXIO_PLUGIN_ENABLED": "${alluxio_plugin_enabled}",
@@ -548,6 +569,12 @@
         }
       ],
       "configWriter" : {
+        "auxConfigGenerators" : [
+          {
+            "filename" : "event-listener.properties",
+            "sourceFilename" : "aux/event-listener.properties"
+          }
+        ],
         "generators" : [
           {
             "filename" : "etc/worker.config.properties",
@@ -555,6 +582,10 @@
             "includedParams" : ["discovery_uri", "worker_webui_port", "query_max-memory", "query_max-memory-per-node"],
             "excludedParams" : ["jvm_config"],
             "additionalConfigs" : [
+              {
+                "key" : "presto.version",
+                "value" : "${presto.version}"
+              },
               {
                 "key" : "coordinator",
                 "value" : "false"
