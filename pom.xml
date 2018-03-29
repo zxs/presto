@@ -10,7 +10,7 @@
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.188</version>
+    <version>0.188.100-1</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -67,7 +67,6 @@
     </properties>
 
     <modules>
-        <module>presto-assembly</module>
         <module>presto-atop</module>
         <module>presto-spi</module>
         <module>presto-array</module>
@@ -84,6 +83,7 @@
         <module>presto-hive</module>
         <module>presto-hive-hadoop2</module>
         <module>presto-teradata-functions</module>
+        <module>presto-eventlistener-flume</module>
         <module>presto-example-http</module>
         <module>presto-local-file</module>
         <module>presto-tpch</module>
@@ -122,6 +122,7 @@
         <module>presto-thrift-testing-server</module>
         <module>presto-thrift-connector</module>
         <module>presto-matching</module>
+        <module>presto-assembly</module>
     </modules>
 
     <dependencyManagement>

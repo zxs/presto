@@ -5,16 +5,16 @@
   <parent>
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-assembly</artifactId>
-    <version>0.188</version>
+    <version>0.188.100-1</version>
   </parent>
-  
+
   <groupId>com.facebook.presto.parcel</groupId>
   <artifactId>PRESTO</artifactId>
   <packaging>pom</packaging>
   <name>presto-parcel</name>
 
   <properties>
-    <presto.version>0.188</presto.version>
+    <presto.version>0.188.100-1</presto.version>
     <jdk.version>8u121</jdk.version>
     <jdk.build>b13</jdk.build>
 
