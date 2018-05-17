@@ -13,16 +13,22 @@
  */
 package com.facebook.presto.plugin.jdbc;
 
+import com.google.common.base.Splitter;
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigSecuritySensitive;
 
 import javax.validation.constraints.NotNull;
 
+import java.util.List;
+
 public class BaseJdbcConfig
 {
+    private static final Splitter SPLITTER = Splitter.on(',').trimResults().omitEmptyStrings();
+
     private String connectionUrl;
     private String connectionUser;
     private String connectionPassword;
+    private List<String> connectionInfo;
 
     @NotNull
     public String getConnectionUrl()
@@ -60,5 +66,17 @@ public class BaseJdbcConfig
     {
         this.connectionPassword = connectionPassword;
         return this;
+    }
+
+    @Config("connection-info")
+    public BaseJdbcConfig setConnectionInfo(String files)
+    {
+        this.connectionInfo = (files == null) ? null : SPLITTER.splitToList(files);
+        return this;
+    }
+
+    public List<String> getConnectionInfo()
+    {
+        return connectionInfo;
     }
 }
