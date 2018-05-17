@@ -17,19 +17,6 @@ CMD=$1
 PRESTO_CONF_FILE=$CONF_DIR/$2
 PRESTO_CONF_PROP=$CONF_DIR/config.properties
 
-# default enable plugin
-
-
-
-if [ "X${CUSTOMIZED_AUTH_ENABLED}" == "Xtrue" ]; then
-  ln -s $CONF_DIR/event-listener.properties $CONF_DIR/etc/event-listener.properties
-fi
-
-if [ "X${EVENT_LISTENER_ENABLED}" == "Xtrue" ]; then
-  ln -s $CONF_DIR/event-listener.properties $CONF_DIR/etc/event-listener.properties
-  ENABLED_PLUGINS+=(eventlistener-flume)
-fi
-
 #always load this plugin
 ENABLED_PLUGINS=(raptor jmx resource-group-managers teradata-functions)
 # option load plugins
@@ -101,7 +88,7 @@ function enable_customized_eventlistener {
     if [ "X$EVENT_LISTENER_ENABLED" != "Xtrue" ]; then echo "Customized Event Listener feature is disables."; return; fi
     local __event_listener_prop="$CONF_DIR/etc/event-listener.properties.tmp"
     # 若定制查询事件监听器配置无效，则使用默认的
-    [ -s ${__event_listener_prop} ] || cp "$CONF_DIR/etc/event-listener.properties" ${__event_listener_prop}
+    [ -s ${__event_listener_prop} ] || cp "$CONF_DIR/aux/event-listener.properties" ${__event_listener_prop}
     ln -s ${__event_listener_prop} ${__event_listener_prop%.*}
 }
 
