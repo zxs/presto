@@ -508,4 +508,32 @@ public class CustomizedSystemAccessControl
         log.debug(DEFAULT_INFO, identity.getUser(), methodName());
         checkIsAdmin(identity.getUser(), notAllow(identity.getUser(), "revoke table privilege"));
     }
+
+    /**
+     * Check if identity is allowed to select from the specified columns in a relation.
+     *
+     * @param identity
+     * @param table
+     * @param columns
+     * @throws AccessDeniedException if not allowed
+     */
+    @Override
+    public void checkCanSelectFromColumns(Identity identity, CatalogSchemaTableName table, Set<String> columns)
+    {
+        this.checkCanSelectFromTable(identity, table);
+    }
+
+    /**
+     * Check if identity is allowed to create a view that selects from the specified columns in a relation.
+     *
+     * @param identity
+     * @param table
+     * @param columns
+     * @throws AccessDeniedException if not allowed
+     */
+    @Override
+    public void checkCanCreateViewWithSelectFromColumns(Identity identity, CatalogSchemaTableName table, Set<String> columns)
+    {
+        this.checkCanSelectFromView(identity, table);
+    }
 }
