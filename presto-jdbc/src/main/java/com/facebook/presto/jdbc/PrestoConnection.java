@@ -116,7 +116,8 @@ public class PrestoConnection
             throws SQLException
     {
         checkOpen();
-        throw new NotImplementedException("Connection", "prepareStatement");
+        return new PrestoPreparedStatement(this, sql);
+        //throw new NotImplementedException("Connection", "prepareStatement");
     }
 
     @Override

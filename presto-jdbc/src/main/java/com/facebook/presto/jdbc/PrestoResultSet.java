@@ -98,6 +98,7 @@ public class PrestoResultSet
     private final StatementClient client;
     private final DateTimeZone sessionTimeZone;
     private final String queryId;
+    private final String query;
     private final Iterator<List<Object>> results;
     private final Map<String, Integer> fieldMap;
     private final List<ColumnInfo> columnInfoList;
@@ -114,6 +115,7 @@ public class PrestoResultSet
 
         this.sessionTimeZone = DateTimeZone.forID(client.getTimeZone().getId());
         this.queryId = client.currentStatusInfo().getId();
+        this.query = client.getQuery();
 
         List<Column> columns = getColumns(client, progressCallback);
         this.fieldMap = getFieldMap(columns);
@@ -126,6 +128,11 @@ public class PrestoResultSet
     public String getQueryId()
     {
         return queryId;
+    }
+
+    public String getQuery()
+    {
+        return query;
     }
 
     public QueryStats getStats()
