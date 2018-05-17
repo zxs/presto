@@ -38,6 +38,8 @@ public class OperatorStats
     public long finishWallMillis;
     public long finishCpuMillis;
     public long finishUserMillis;
-    public long memoryReservationBytes;
+    // public long memoryReservationBytes; // 0.188
+    public long userMemoryReservationBytes;
+    public long revocableMemoryReservationBytes;
     public long systemMemoryReservationBytes;
 }

@@ -35,13 +35,13 @@ public class FlumeEventListener
     @Override
     public void queryCreated(QueryCreatedEvent queryCreatedEvent)
     {
-        log.info("queryCreated: %s", queryCreatedEvent);
+        log.debug("queryCreated: %s", queryCreatedEvent);
     }
 
     @Override
     public void queryCompleted(QueryCompletedEvent queryCompletedEvent)
     {
-        log.info("queryCompleted %s", queryCompletedEvent);
+        log.debug("queryCompleted %s", queryCompletedEvent);
         flumeClient.send(queryCompletedEvent);
     }
 

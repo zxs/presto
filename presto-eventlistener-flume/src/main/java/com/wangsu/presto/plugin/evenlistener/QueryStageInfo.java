@@ -27,9 +27,11 @@ public class QueryStageInfo
     public long rawInputDataSizeBytes;
     public long rawInputPositions;
 
-    public long peakMemoryReservationBytes;
+    // public long peakMemoryReservationBytes; // 0.188
+    public long peakUserMemoryReservationBytes; // 0.202
     //- memory pool
-    public double cumulativeMemory;
+    // public double cumulativeMemory; // 0.188
+    public double cumulativeUserMemory; // 0.202
 
     public long outputDataSizeBytes;
     public long outputPositions;

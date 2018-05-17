@@ -25,12 +25,12 @@ import javax.json.JsonReader;
 import javax.json.JsonValue.ValueType;
 
 import java.io.StringReader;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 public class QueryStatsHelper
@@ -81,8 +81,11 @@ public class QueryStatsHelper
             stageInfo.outputPositions = stageStats.getJsonNumber("outputPositions").longValue();
             stageInfo.completedTasks = stageStats.getInt("completedTasks");
             stageInfo.completedDrivers = stageStats.getInt("completedDrivers");
-            stageInfo.cumulativeMemory = stageStats.getJsonNumber("cumulativeMemory").doubleValue();
-            stageInfo.peakMemoryReservationBytes = getBytesOrNegativeOne(stageStats.getString("peakMemoryReservation"));
+            //stageInfo.cumulativeMemory = stageStats.getJsonNumber("cumulativeMemory").doubleValue(); // 0.188
+            //stageInfo.peakMemoryReservationBytes = getBytesOrNegativeOne(stageStats.getString("peakMemoryReservation")); // 0.188
+
+            stageInfo.cumulativeUserMemory = stageStats.getJsonNumber("cumulativeUserMemory").doubleValue(); // 0.202
+            stageInfo.peakUserMemoryReservationBytes = getBytesOrNegativeOne(stageStats.getString("peakUserMemoryReservation")); // 0.202
             stageInfo.totalScheduledTimeMillis = getMillisOrNegativeOne(stageStats.getString("totalScheduledTime"));
             stageInfo.totalCpuTimeMillis = getMillisOrNegativeOne(stageStats.getString("totalCpuTime"));
             stageInfo.totalUserTimeMillis = getMillisOrNegativeOne(stageStats.getString("totalUserTime"));
@@ -137,7 +140,11 @@ public class QueryStatsHelper
             operatorStats.finishWallMillis = getMillisOrNegativeOne(obj.getString("finishWall"));
             operatorStats.finishCpuMillis = getMillisOrNegativeOne(obj.getString("finishCpu"));
             operatorStats.finishUserMillis = getMillisOrNegativeOne(obj.getString("finishUser"));
-            operatorStats.memoryReservationBytes = getBytesOrNegativeOne(obj.getString("memoryReservation"));
+            // operatorStats.memoryReservationBytes = getBytesOrNegativeOne(obj.getString("memoryReservation")); // 0.188
+            // 0.202 +
+            operatorStats.userMemoryReservationBytes = getBytesOrNegativeOne(obj.getString("userMemoryReservation"));
+            operatorStats.revocableMemoryReservationBytes = getBytesOrNegativeOne(obj.getString("revocableMemoryReservation"));
+            // ?? memoryReservation = userMemoryReservation + revocableMemoryReservation 0.
             operatorStats.systemMemoryReservationBytes = getBytesOrNegativeOne(obj.getString("systemMemoryReservation"));
         }
         catch (Exception e) {
@@ -150,8 +157,9 @@ public class QueryStatsHelper
 
     public static Map<Integer, QueryStageInfo> getQueryStages(QueryMetadata eventMetadata)
     {
+        Map<Integer, QueryStageInfo> stages = new TreeMap<>();
         if (!eventMetadata.getPayload().isPresent()) {
-            return null;
+            return stages;
         }
 
         String payload = eventMetadata.getPayload().get();
@@ -163,10 +171,9 @@ public class QueryStatsHelper
         catch (Exception e) {
             log.error(e,
                     String.format("getQueryStages - Unable to extract JsonObject out of following blob:\n%s\n", payload));
-            return null;
+            return stages;
         }
 
-        Map<Integer, QueryStageInfo> stages = new HashMap<Integer, QueryStageInfo>();
         while (!stageJsonObjs.isEmpty()) {
             JsonObject cur = stageJsonObjs.poll();
             String stageIdStr = "Unknown";
@@ -181,7 +188,7 @@ public class QueryStatsHelper
             catch (Exception e) {
                 log.error(e,
                         String.format("Failed to parse QueryStageInfo from JsonObject:\n%s\n", cur.toString()));
-                return null;
+                return stages;
             }
 
             try {
