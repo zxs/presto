@@ -1,0 +1,42 @@
+{
+  "users": [
+    {
+      "user": "_default_",
+      "privilege": ["hive.information_schema.*", "system.*"]
+    },
+    {
+      "user": "gdp",
+      "privilege":
+      [
+        "hive.default.*",
+        "mysql.*",
+        "phoenix.test.table"
+      ]
+    },
+    {
+      "user": "myview",
+      "privilege": ["hive.com_cnc_dcc.realChanFlow"]
+    },
+    {
+      "user": "superman",
+      "privilege": ["*"]
+    },
+    {
+      "user": "changed",
+      "privilege": ["*"]
+    },
+    {
+      "user": "admin",
+      "is_admin": true,
+      "privilege": ["hive.com_cnc_dcc.attackwss*", "hive.default.test_auth_view"]
+    },
+    {
+      "user": "yourview",
+      "privilege": ["hive.com_cnc_dcc.attackwss*", "hive.default.test_auth*"]
+    },
+    {
+      "user": "root",
+      "privilege": ["hive.com_cnc_dcc.attackwss", "hive.com_cnc_dcc.attackwss__1", "hive.default.test_auth_view*"]
+    }
+  ]
+}

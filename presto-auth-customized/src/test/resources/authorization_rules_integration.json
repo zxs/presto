@@ -1,0 +1,31 @@
+{
+  "users": [
+    {
+      "user": "_default_",
+      "privilege": ["hive.information_schema.*", "system.*", "mysql.information_schema.*"]
+    },
+    {
+      "user": "myview",
+      "privilege":
+      [
+        "hive.test_auth_1.t1",
+        "hive.test_auth_2.t1*",
+        "mysql.test_auth_1.t*",
+        "mysql.test_auth_2.*",
+        "mysql.test_auth_3.t1"
+      ]
+    },
+    {
+      "user": "gdp",
+      "privilege": ["*"]
+    },
+    {
+      "user": "si",
+      "privilege": ["*"]
+    },
+    {
+      "user": "root",
+      "is_admin": true
+    }
+  ]
+}

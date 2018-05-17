@@ -110,6 +110,18 @@
         </artifact>
     </artifactSet>
 
+    <artifactSet to="plugin/phoenix-4_6">
+        <artifact id="${project.groupId}:presto-phoenix-4_6:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/phoenix-4_10">
+        <artifact id="${project.groupId}:presto-phoenix-4_10:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
     <artifactSet to="plugin/redshift">
         <artifact id="${project.groupId}:presto-redshift:zip:${project.version}">
             <unpack />
@@ -172,6 +184,18 @@
 
     <artifactSet to="plugin/presto-thrift">
         <artifact id="${project.groupId}:presto-thrift-connector:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/eventlistener-flume">
+        <artifact id="${project.groupId}:presto-eventlistener-flume:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/auth-customized">
+        <artifact id="${project.groupId}:presto-auth-customized:zip:${project.version}">
             <unpack />
         </artifact>
     </artifactSet>
