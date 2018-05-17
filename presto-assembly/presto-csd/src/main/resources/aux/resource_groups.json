@@ -1,0 +1,57 @@
+{
+  "rootGroups": [
+    {
+      "name": "global",
+      "softMemoryLimit": "95%",
+      "hardConcurrencyLimit": 100,
+      "maxQueued": 500,
+      "schedulingPolicy": "fair",
+      "subGroups": [
+        {
+          "name": "adhoc",
+          "softMemoryLimit": "10%",
+          "hardConcurrencyLimit": 20,
+          "maxQueued": 50,
+          "schedulingPolicy": "fair"
+        },
+        {
+          "name": "pipeline",
+          "softMemoryLimit": "95%",
+          "hardConcurrencyLimit": 90,
+          "maxQueued": 500,
+          "schedulingPolicy": "fair",
+          "subGroups": [
+            {
+              "name": "${SOURCE}",
+              "softMemoryLimit": "20%",
+              "hardConcurrencyLimit": 40,
+              "maxQueued": 100,
+              "schedulingPolicy": "fair"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "admin",
+      "softMemoryLimit": "80%",
+      "hardConcurrencyLimit": 100,
+      "maxQueued": 500,
+      "schedulingPolicy": "fair"
+    }
+  ],
+  "selectors": [
+    {
+      "source": "gdp",
+      "group": "admin"
+    },
+    {
+      "source": "pipeline_.*",
+      "group": "global.pipeline.${SOURCE}"
+    },
+    {
+      "group": "global.adhoc"
+    }
+  ],
+  "cpuQuotaPeriod": "1h"
+}
