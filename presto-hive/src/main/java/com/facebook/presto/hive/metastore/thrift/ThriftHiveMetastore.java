@@ -27,7 +27,6 @@ import com.facebook.presto.spi.TableNotFoundException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.Database;
@@ -204,10 +203,12 @@ public class ThriftHiveMetastore
                     .stopOnIllegalExceptions()
                     .run("getTable", stats.getGetTable().wrap(() -> {
                         try (HiveMetastoreClient client = clientProvider.createMetastoreClient()) {
-                            Table table = client.getTable(databaseName, tableName);
-                            if (table.getTableType().equals(TableType.VIRTUAL_VIEW.name()) && !isPrestoView(table)) {
+                            org.apache.hadoop.hive.metastore.api.Table table = client.getTable(databaseName, tableName);
+                            /*  ignore hive/presto view check @zxs
+                            if (table.getTableType().equals(TableType.VIRTUAL_VIEW.name()) && (!isPrestoView(table))) {
                                 throw new HiveViewNotSupportedException(new SchemaTableName(databaseName, tableName));
                             }
+                            */
                             return Optional.of(table);
                         }
                     }));

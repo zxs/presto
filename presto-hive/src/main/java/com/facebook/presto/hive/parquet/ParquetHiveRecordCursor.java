@@ -28,6 +28,7 @@ import com.facebook.presto.spi.type.Decimals;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import org.apache.hadoop.conf.Configuration;
@@ -102,7 +103,8 @@ import static parquet.schema.OriginalType.MAP_KEY_VALUE;
 public class ParquetHiveRecordCursor
         implements RecordCursor
 {
-    private final ParquetRecordReader<FakeParquetRecord> recordReader;
+    private static final Logger log = Logger.get(ParquetHiveRecordCursor.class);
+    private final Optional<ParquetRecordReader<FakeParquetRecord>> recordReader;
 
     private final Type[] types;
 
@@ -161,7 +163,7 @@ public class ParquetHiveRecordCursor
             types[columnIndex] = typeManager.getType(column.getTypeSignature());
         }
 
-        this.recordReader = createParquetRecordReader(
+        this.recordReader = Optional.ofNullable(createParquetRecordReader(
                 hdfsEnvironment,
                 sessionUser,
                 configuration,
@@ -172,7 +174,7 @@ public class ParquetHiveRecordCursor
                 columns,
                 useParquetColumnNames,
                 predicatePushdownEnabled,
-                effectivePredicate);
+                effectivePredicate));
     }
 
     @Override
@@ -192,8 +194,11 @@ public class ParquetHiveRecordCursor
 
     private void updateCompletedBytes()
     {
+        if (!recordReader.isPresent()) {
+            return;
+        }
         try {
-            long newCompletedBytes = (long) (totalBytes * recordReader.getProgress());
+            long newCompletedBytes = (long) (totalBytes * recordReader.get().getProgress());
             completedBytes = min(totalBytes, max(completedBytes, newCompletedBytes));
         }
         catch (IOException ignored) {
@@ -212,11 +217,14 @@ public class ParquetHiveRecordCursor
     @Override
     public boolean advanceNextPosition()
     {
+        if (!recordReader.isPresent()) {
+            return false;
+        }
         try {
             // reset null flags
             Arrays.fill(nulls, true);
 
-            if (closed || !recordReader.nextKeyValue()) {
+            if (closed || !recordReader.get().nextKeyValue()) {
                 close();
                 return false;
             }
@@ -296,6 +304,9 @@ public class ParquetHiveRecordCursor
     @Override
     public void close()
     {
+        if (!recordReader.isPresent()) {
+            return;
+        }
         // some hive input formats are broken and bad things can happen if you close them multiple times
         if (closed) {
             return;
@@ -305,7 +316,7 @@ public class ParquetHiveRecordCursor
         updateCompletedBytes();
 
         try {
-            recordReader.close();
+            recordReader.get().close();
         }
         catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -372,6 +383,11 @@ public class ParquetHiveRecordCursor
             });
         }
         catch (Exception e) {
+            if (e.getMessage().contains("is not a Parquet file (too small)")) {
+                log.warn(e, "Ignore the split path");
+                return null;
+            }
+
             throwIfInstanceOf(e, PrestoException.class);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
