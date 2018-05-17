@@ -10,7 +10,7 @@
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.202-SNAPSHOT</version>
+    <version>0.202.100-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -81,6 +81,7 @@
         <module>presto-hive</module>
         <module>presto-hive-hadoop2</module>
         <module>presto-teradata-functions</module>
+        <module>presto-eventlistener-flume</module>
         <module>presto-example-http</module>
         <module>presto-local-file</module>
         <module>presto-tpch</module>
@@ -91,6 +92,9 @@
         <module>presto-postgresql</module>
         <module>presto-redshift</module>
         <module>presto-sqlserver</module>
+        <module>presto-phoenix</module>
+        <module>presto-phoenix-4_6</module>
+        <module>presto-phoenix-4_10</module>
         <module>presto-mongodb</module>
         <module>presto-client</module>
         <module>presto-parser</module>
@@ -112,12 +116,14 @@
         <module>presto-plugin-toolkit</module>
         <module>presto-resource-group-managers</module>
         <module>presto-password-authenticators</module>
+        <module>presto-auth-customized</module>
         <module>presto-benchto-benchmarks</module>
         <module>presto-thrift-connector-api</module>
         <module>presto-thrift-testing-server</module>
         <module>presto-thrift-connector</module>
         <module>presto-matching</module>
         <module>presto-memory-context</module>
+        <module>presto-assembly</module>
     </modules>
 
     <dependencyManagement>
@@ -249,6 +255,12 @@
             <dependency>
                 <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-mysql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-phoenix</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
